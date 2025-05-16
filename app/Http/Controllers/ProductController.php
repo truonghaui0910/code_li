@@ -4,12 +4,13 @@ namespace App\Http\Controllers;
 
 use App\Common\Utils;
 use App\Http\Models\TiktokProfile;
-use App\Models\Zliveautolive;
+use App\Http\Models\Zliveautolive;
 use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use function config;
 use function GuzzleHttp\json_decode;
 use function GuzzleHttp\json_encode;
 
@@ -297,10 +298,7 @@ class ProductController extends Controller {
             return array("status" => "error", "message" => "Không có link sản phẩm nào");
         }
 
-        // Lấy profile ID của TikTok Shop (có thể lấy từ request hoặc mặc định từ người dùng)
-        $profileId = 26186;
-
-
+        $profileId = 26178;
 
         // Xử lý link đầu tiên (để có phản hồi nhanh)
         $firstLink = array_shift($links);
@@ -353,7 +351,7 @@ class ProductController extends Controller {
      */
     private function processProductLink($link, $profileId, $user) {
         // Sử dụng câu lệnh để kiểm tra sản phẩm
-        $cmd = "/home/tiktok_tools/env/bin/python /home/tiktok_tools/tiktok_helper_7_capt_test4.py product_check $profileId \"$link\"";
+        $cmd = config('config.python_path')." product_check $profileId \"$link\"";
 
         Log::info("$user->user_name|processProductLink|cmd:" . $cmd);
         $tmp = shell_exec($cmd);
@@ -455,8 +453,8 @@ class ProductController extends Controller {
         if (!isset($batchData['original_links'])) {
             $batchData['original_links'] = [];
         }
-        $batchData['original_links'] = array_merge($batchData['original_links'], $processedLinks);        
-        
+        $batchData['original_links'] = array_merge($batchData['original_links'], $processedLinks);
+
         // Cập nhật danh sách sản phẩm
         $batchData['products'] = array_merge($batchData['products'], $newProducts);
 
@@ -489,88 +487,149 @@ class ProductController extends Controller {
         );
     }
 
-    public function savePinConfig(Request $request) {
-        $user = Auth::user();
-        Log::info("$user->user_name|TiktokController.savePinConfig|request=" . json_encode($request->all()));
+//public function savePinConfig(Request $request) {
+//    $user = Auth::user();
+//    Log::info("$user->user_name|ProductController.savePinConfig|request=" . json_encode($request->all()));
+//    
+//    // Lấy thông tin profile
+//    $profileId = $request->profile_id;
+//    
+//    if (!$profileId) {
+//        return array("status" => "error", "message" => "Thiếu thông tin profile ID");
+//    }
+//    
+//    $profile = TiktokProfile::where('id', $profileId)
+//            ->where('username', $user->user_name)
+//            ->first();
+//    
+//    if (!$profile) {
+//        return array("status" => "error", "message" => "Không tìm thấy thông tin profile TikTok");
+//    }
+//    
+//    // Lấy cấu hình pin từ request
+//    $productSetId = $request->product_set_id;
+//    $isAutoPin = $request->is_autopin ? true : false;
+//    
+//    if (!$productSetId) {
+//        return array("status" => "error", "message" => "Thiếu thông tin bộ sản phẩm");
+//    }
+//    
+//    // Tạo cấu hình pin
+//    $pinConfig = [
+//        'product_set_id' => $productSetId,
+//        'is_autopin' => $isAutoPin,
+//        'updated_at' => time()
+//    ];
+//    
+//    // Nếu bật tự động pin, lưu thêm thông tin cấu hình
+//    if ($isAutoPin) {
+//        $pinType = $request->pin_type; // 'interval' hoặc 'specific'
+//        $pinConfig['pin_type'] = $pinType;
+//        
+//        if ($pinType == 'interval') {
+//            // Kiểu 1: Khoảng thời gian
+//            $interval = intval($request->interval);
+//            
+//            if ($interval < 60) {  // Tối thiểu 1 phút = 60 giây
+//                return array("status" => "error", "message" => "Khoảng thời gian pin phải lớn hơn hoặc bằng 1 phút");
+//            }
+//            
+//            $pinConfig['interval'] = $interval;
+//        } else {
+//            // Kiểu 2: Thời điểm cụ thể
+//            $products = json_decode($request->products, true);
+//            
+//            if (empty($products)) {
+//                return array("status" => "error", "message" => "Thiếu thông tin thời gian pin cho sản phẩm");
+//            }
+//            
+//            // Sắp xếp sản phẩm theo thời gian pin
+//            usort($products, function($a, $b) {
+//                return $a['pin_time'] - $b['pin_time'];
+//            });
+//            
+//            $pinConfig['products'] = $products;
+//        }
+//    }
+//    
+//    // Lưu cấu hình vào profile
+//    $profile->product_pin_config = json_encode($pinConfig);
+//    $profile->save();
+//    
+//    return array("status" => "success", "message" => "Đã lưu cấu hình pin sản phẩm thành công");
+//}
 
-        // Lấy thông tin profile
-        $profileId = $request->profile_id;
-
-        if (!$profileId) {
-            return array("status" => "error", "message" => "Thiếu thông tin profile ID");
-        }
-
-        $profile = TiktokProfile::where('id', $profileId)
-                ->where('username', $user->user_name)
-                ->first();
-
-        if (!$profile) {
-            return array("status" => "error", "message" => "Không tìm thấy thông tin profile TikTok");
-        }
-
-        // Lấy cấu hình pin từ request
+public function savePinConfig(Request $request) {
+    $user = Auth::user();
+    Log::info("$user->user_name|ProductController.savePinConfig|request=" . json_encode($request->all()));
+    
+    // Lấy thông tin profile
+    $profileId = $request->profile_id;
+    
+    if (!$profileId) {
+        return array("status" => "error", "message" => "Thiếu thông tin profile ID");
+    }
+    
+    $profile = TiktokProfile::where('id', $profileId)
+            ->where('username', $user->user_name)
+            ->first();
+    
+    if (!$profile) {
+        return array("status" => "error", "message" => "Không tìm thấy thông tin profile TikTok");
+    }
+    
+    // Lấy cấu hình pin từ request
+    $productSetId = $request->product_set_id;
+    $isAutoPin = $request->is_autopin ? true : false;
+    
+    if (!$productSetId) {
+        return array("status" => "error", "message" => "Thiếu thông tin bộ sản phẩm");
+    }
+    
+    // Tạo cấu hình pin
+    $pinConfig = [
+        'product_set_id' => $productSetId,
+        'is_autopin' => $isAutoPin,
+        'updated_at' => time()
+    ];
+    
+    // Nếu bật tự động pin, lưu thêm thông tin cấu hình
+    if ($isAutoPin) {
         $pinType = $request->pin_type; // 'interval' hoặc 'specific'
-        // Tạo cấu hình pin
-        $pinConfig = [
-            'pin_type' => $pinType,
-            'updated_at' => time()
-        ];
-
+        $pinConfig['pin_type'] = $pinType;
+        
         if ($pinType == 'interval') {
             // Kiểu 1: Khoảng thời gian
             $interval = intval($request->interval);
-
-            if ($interval < 30) {
-                return array("status" => "error", "message" => "Khoảng thời gian pin phải lớn hơn hoặc bằng 30 giây");
+            
+            if ($interval < 60) {  // Tối thiểu 1 phút = 60 giây
+                return array("status" => "error", "message" => "Khoảng thời gian pin phải lớn hơn hoặc bằng 1 phút");
             }
-
+            
             $pinConfig['interval'] = $interval;
-
-            // Lấy danh sách sản phẩm từ user
-            $productSetId = $request->product_set_id;
-            $productSets = isset($user->product_sets) ? json_decode($user->product_sets, true) : [];
-
-            // Tìm bộ sản phẩm được chọn
-            $selectedSet = null;
-            foreach ($productSets as $set) {
-                if ($set['id'] == $productSetId) {
-                    $selectedSet = $set;
-                    break;
-                }
-            }
-
-            if (!$selectedSet) {
-                return array("status" => "error", "message" => "Không tìm thấy bộ sản phẩm");
-            }
-
-            // Lưu danh sách ID sản phẩm
-            $pinConfig['product_set_id'] = $productSetId;
-            $pinConfig['product_ids'] = array_map(function($product) {
-                return $product['product_id'];
-            }, $selectedSet['products']);
         } else {
             // Kiểu 2: Thời điểm cụ thể
             $products = json_decode($request->products, true);
-
+            
             if (empty($products)) {
                 return array("status" => "error", "message" => "Thiếu thông tin thời gian pin cho sản phẩm");
             }
-
+            
             // Sắp xếp sản phẩm theo thời gian pin
             usort($products, function($a, $b) {
                 return $a['pin_time'] - $b['pin_time'];
             });
-
+            
             $pinConfig['products'] = $products;
         }
-
-        // Lưu cấu hình vào profile
-        $profile->product_pin_config = json_encode($pinConfig);
-        $profile->save();
-
-        return array("status" => "success", "message" => "Đã lưu cấu hình pin sản phẩm thành công");
     }
-
+    
+    // Lưu cấu hình vào profile
+    $profile->product_pin_config = json_encode($pinConfig);
+    $profile->save();
+    
+    return array("status" => "success", "message" => "Đã lưu cấu hình pin sản phẩm thành công");
+}    
     /**
      * Lấy cấu hình pin sản phẩm
      */
@@ -640,170 +699,6 @@ class ProductController extends Controller {
         $profile->save();
 
         return array("status" => "success", "message" => "Đã xóa cấu hình pin sản phẩm thành công");
-    }
-
-    /**
-     * Tự động pin sản phẩm
-     * Hàm này sẽ chạy định kỳ qua cron job
-     */
-    public function autoPinProducts() {
-        // Lấy tất cả các live đang chạy
-        $runningLives = Zliveautolive::where('status', 2)->get();
-
-        foreach ($runningLives as $live) {
-            // Kiểm tra xem có profile không
-            if (!$live->tiktok_profile_id) {
-                continue;
-            }
-
-            // Lấy thông tin profile
-            $profile = TiktokProfile::where('id', $live->tiktok_profile_id)->first();
-            if (!$profile || !$profile->product_pin_config) {
-                continue;
-            }
-
-            // Parse cấu hình pin
-            $pinConfig = json_decode($profile->product_pin_config, true);
-            if (!$pinConfig || !isset($pinConfig['pin_type'])) {
-                continue;
-            }
-
-            // Lấy danh sách sản phẩm đã pin
-            $pinnedProducts = isset($live->pinned_products) ? json_decode($live->pinned_products, true) : [];
-            if (!$pinnedProducts) {
-                $pinnedProducts = [];
-            }
-
-            // Xử lý theo loại pin
-            if ($pinConfig['pin_type'] == 'interval') {
-                $this->processIntervalPin($live, $profile, $pinConfig, $pinnedProducts);
-            } else {
-                $this->processSpecificTimePin($live, $profile, $pinConfig, $pinnedProducts);
-            }
-        }
-    }
-
-    /**
-     * Xử lý pin theo khoảng thời gian
-     */
-    private function processIntervalPin($live, $profile, $pinConfig, $pinnedProducts) {
-        // Kiểm tra xem có cần pin sản phẩm không
-        $nextPinTime = isset($live->next_pin_time) ? $live->next_pin_time : 0;
-        if ($nextPinTime > time()) {
-            return;
-        }
-
-        // Lấy danh sách sản phẩm cần pin
-        $productIds = $pinConfig['product_ids'] ?? [];
-        if (empty($productIds)) {
-            return;
-        }
-
-        // Lọc ra các sản phẩm chưa pin
-        if (!empty($pinnedProducts)) {
-            $remainingProducts = array_diff($productIds, $pinnedProducts);
-
-            // Nếu tất cả sản phẩm đã được pin, bắt đầu lại từ đầu
-            if (empty($remainingProducts)) {
-                $remainingProducts = $productIds;
-                $pinnedProducts = [];
-            }
-        } else {
-            $remainingProducts = $productIds;
-        }
-
-        // Lấy sản phẩm tiếp theo cần pin
-        $nextProductId = reset($remainingProducts);
-
-        // Thực hiện pin sản phẩm
-        $pinResult = $this->pinProduct($live, $nextProductId);
-
-        // Nếu pin thành công, cập nhật trạng thái
-        if ($pinResult) {
-            // Thêm sản phẩm vào danh sách đã pin
-            $pinnedProducts[] = $nextProductId;
-
-            // Cập nhật vào live
-            $live->pinned_products = json_encode($pinnedProducts);
-
-            // Cập nhật thời gian pin tiếp theo
-            $live->next_pin_time = time() + $pinConfig['interval'];
-
-            // Lưu vào database
-            $live->save();
-
-            Log::info("Đã pin sản phẩm $nextProductId cho live {$live->id}, sản phẩm tiếp theo sẽ được pin lúc " . date('Y-m-d H:i:s', $live->next_pin_time));
-        }
-    }
-
-    /**
-     * Xử lý pin theo thời điểm cụ thể
-     */
-    private function processSpecificTimePin($live, $profile, $pinConfig, $pinnedProducts) {
-        // Kiểm tra thời gian bắt đầu live
-        if (!$live->started_time) {
-            return;
-        }
-
-        // Lấy danh sách sản phẩm và thời gian pin
-        $products = $pinConfig['products'] ?? [];
-        if (empty($products)) {
-            return;
-        }
-
-        // Tính thời gian đã trôi qua từ khi bắt đầu live (phút)
-        $liveStartedTime = strtotime($live->started_time);
-        $elapsedMinutes = floor((time() - $liveStartedTime) / 60);
-
-        Log::info("Live {$live->id} đã chạy được $elapsedMinutes phút");
-
-        // Tìm các sản phẩm cần pin tại thời điểm hiện tại
-        foreach ($products as $product) {
-            $productId = $product['product_id'];
-            $pinTime = $product['pin_time'];
-
-            // Kiểm tra xem sản phẩm đã được pin chưa
-            if (in_array($productId, $pinnedProducts)) {
-                continue;
-            }
-
-            // Kiểm tra xem đã đến thời gian pin chưa
-            if ($elapsedMinutes >= $pinTime) {
-                // Thực hiện pin sản phẩm
-                $pinResult = $this->pinProduct($live, $productId);
-
-                // Nếu pin thành công, cập nhật trạng thái
-                if ($pinResult) {
-                    // Thêm sản phẩm vào danh sách đã pin
-                    $pinnedProducts[] = $productId;
-
-                    // Cập nhật vào live
-                    $live->pinned_products = json_encode($pinnedProducts);
-                    $live->save();
-
-                    Log::info("Đã pin sản phẩm $productId cho live {$live->id} tại phút thứ $pinTime");
-                }
-            }
-        }
-    }
-
-    /**
-     * Thực hiện pin sản phẩm
-     */
-    private function pinProduct($live, $productId) {
-        // Sử dụng câu lệnh để pin sản phẩm
-        $cmd = "/home/tiktok_tools/env/bin/python /home/tiktok_tools/tiktok_helper_6_capt.py product_pin $live->tiktok_profile_id $live->room_id $productId";
-        Log::info("pinProduct cmd:" . $cmd);
-
-        $tmp = shell_exec($cmd);
-        $shell = trim($tmp);
-
-        if ($shell == null || $shell == "") {
-            return false;
-        }
-
-        $pro = json_decode($shell);
-        return (!empty($pro->code) && $pro->code == 0);
     }
 
 }

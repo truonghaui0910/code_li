@@ -56,6 +56,8 @@ class AdminLoginMiddleware {
             $isVip = 0;
             $isTiktok = 0;
             $isTax = 0;
+            $isUpdateSource = 0;
+            $isTiktokMulti = 0;
             //được tăng số lượng luông live được tạo
             $isMaxLive = 0;
             if (in_array('1', $arrayRole)) {
@@ -73,15 +75,25 @@ class AdminLoginMiddleware {
             if (in_array('7', $arrayRole)) {
                 $isTax = 1;
             }
+            if (in_array('8', $arrayRole)) {
+                $isUpdateSource = 1;
+            }
+            if (in_array('9', $arrayRole)) {
+                $isTiktokMulti = 1;
+            }
             view()->share("isAdmin", $isAdmin);
             view()->share("isVip", $isVip);
             view()->share("isTiktok", $isTiktok);
             view()->share("user_login", $user);
             view()->share("isTax", $isTax);
+            view()->share("isUpdateSource", $isUpdateSource);
+            view()->share("isTiktokMulti", $isTiktokMulti);
             $request['isAdmin'] = $isAdmin;
             $request['isVip'] = $isVip;
             $request['isMaxLive'] = $isMaxLive;
             $request['isTax'] = $isTax;
+            $request['isUpdateSource'] = $isUpdateSource;
+            $request['isTiktokMulti'] = $isTiktokMulti;
             if ($isAdmin) {
                 $count = DB::select("select count(id) as total from `tiktok_profile` where  status_cookie=1 and del_status =0 and (JSON_EXTRACT(active_v3_info, '$.status') = 'waiting')");
                 view()->share("count_waiting_v3", $count[0]->total);

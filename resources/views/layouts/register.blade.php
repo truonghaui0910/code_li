@@ -108,20 +108,26 @@
                                                         <input type="hidden" name="ref" value="{{$ref}}"/>
                                                         <div class="row spacing3">
                                                             <div class="col-sm-12">
-                                                                <div class="input-field filled dark"><input  id="facebook" type="text" name="facebook" value="{{ old('facebook') }}"> <label for="facebook">Link Facebook</label></div>
+                                                                <div class="input-field filled dark">
+                                                                    <input id="email" type="email" name="email" value="{{ old('email') }}" required> 
+                                                                    <label for="email">Email <span style="color: red;">*</span></label>
+                                                                </div>
+                                                            </div>        
+                                                            <div class="col-sm-12">
+                                                                <div class="input-field filled dark"><input  id="facebook" type="text" name="facebook" value="{{ old('facebook') }}"> <label for="facebook">Link Facebook <span style="color: red;">*</span></label></div>
                                                             </div>
                                                             <div class="col-sm-12">
-                                                                <div class="input-field filled dark"><input  id="phone" type="text" name="phone"  value="{{ old('phone') }}"> <label for="phone">Số điện thoại</label></div>
+                                                                <div class="input-field filled dark"><input  id="phone" type="text" name="phone"  value="{{ old('phone') }}"> <label for="phone">Số điện thoại <span style="color: red;">*</span></label></div>
                                                             </div>
                                                             <div class="col-sm-12">
-                                                                <div class="input-field filled dark"><input  id="user_name" type="text" name="user_name" required value="{{ old('user_name') }}"> <label for="user_name">Tài khoản</label></div>
+                                                                <div class="input-field filled dark"><input  id="user_name" type="text" name="user_name" required value="{{ old('user_name') }}"> <label for="user_name">Tài khoản <span style="color: red;">*</span></label></div>
                                                             </div>
 
                                                             <div class="col-md-6">
-                                                                <div class="input-field filled dark mq-md-up" data-class="me-2"><input class="validate" id="password" type="password" name="password" required> <label for="password">Mật khẩu</label></div>
+                                                                <div class="input-field filled dark mq-md-up" data-class="me-2"><input class="validate" id="password" type="password" name="password" required> <label for="password">Mật khẩu <span style="color: red;">*</span></label></div>
                                                             </div>
                                                             <div class="col-md-6">
-                                                                <div class="input-field filled dark mq-md-up" data-class="ms-2"><input class="validate" id="confirm" type="password" name="password_confirmation"  required> <label for="confirm">Xác nhận mật khẩu</label></div>
+                                                                <div class="input-field filled dark mq-md-up" data-class="ms-2"><input class="validate" id="confirm" type="password" name="password_confirmation"  required> <label for="confirm">Xác nhận mật khẩu <span style="color: red;">*</span></label></div>
                                                             </div>
                                                             <div class="col-sm-12" style="text-align: -moz-center;text-align: -webkit-center;">                               
                                                             {!! NoCaptcha::display() !!}

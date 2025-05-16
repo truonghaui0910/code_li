@@ -292,13 +292,13 @@
                                                 data-toggle="tooltip" data-placement="top"
                                                 title="Thêm tài khoản Tiktok sử dụng cookie trên Website">Thêm tài khoản</button>
                                             @endif
-                                            @if ($data->status_cookie == 1)
+                                            @if ($data->status_cookie == 1 && $isTiktokMulti)
                                             <button 
                                                 class="btn btn-dark btn-sm waves-effect waves-light "
                                                 onclick="showPinConfigModal({{ $data->id }})"
 
                                                 data-id="{{ $data->id }}" data-toggle="tooltip"
-                                                data-placement="top" title="Cấu hình pin sản phẩm">Pin</button>
+                                                data-placement="top" title="Cấu hình ghim sản phẩm">Ghim</button>
                                             @if($data->custom_proxy == null)
                                             <button id="ip-{{ $data->id }}"
                                                     class="btn btn-dark btn-sm waves-effect waves-light "

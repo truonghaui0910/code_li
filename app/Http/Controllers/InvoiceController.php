@@ -111,7 +111,7 @@ class InvoiceController extends Controller {
         if ($package->platform == 3) {
             $basePrice = 300000;
 //            $rediect = "/sppricing";
-            $keyLiveKey =  "shopee_key_live";
+            $keyLiveKey = "shopee_key_live";
             $currentPackage = $user->shopee_package;
             $currenDateEnd = $user->shopee_end_date;
             $oldPackage = Package::where("package_code", $user->shopee_package)->where("status", 1)->first();
@@ -121,7 +121,7 @@ class InvoiceController extends Controller {
         } elseif ($package->platform == 2) {
             $basePrice = 500000;
 //            $rediect = "/ttpricing";
-            $keyLiveKey =  "tiktok_key_live";
+            $keyLiveKey = "tiktok_key_live";
             $currentPackage = $user->tiktok_package;
             $currenDateEnd = $user->tiktok_end_date;
             $oldPackage = Package::where("package_code", $user->tiktok_package)->where("status", 1)->first();
@@ -132,7 +132,7 @@ class InvoiceController extends Controller {
         } else {
             $basePrice = 200000;
 //            $rediect = "/pricing";
-            $keyLiveKey =  "number_key_live";
+            $keyLiveKey = "number_key_live";
             $currentPackage = $user->package_code;
             $currenDateEnd = $user->package_end_date;
             $oldPackage = Package::where("package_code", $user->package_code)->where("status", 1)->first();
@@ -313,6 +313,49 @@ class InvoiceController extends Controller {
 
             $money = $month * $package->price - $discountMonth;
             $paymentMoney = $money - ($money * $package->discount_per / 100);
+
+            // Xử lý thông tin hóa đơn VAT
+            $invoiceInfo = null;
+            if ($request->needInvoice == 1) {
+                $invoiceInfo = [
+                    'type' => $request->invoiceType,
+                    'data' => []
+                ];
+
+                if ($request->invoiceType == 'personal') {
+                    // Validate thông tin cá nhân
+                    if (empty($request->personal_name) || empty($request->personal_id) ||
+                            empty($request->personal_phone) || empty($request->personal_email) ||
+                            empty($request->personal_address)) {
+                        return array('status' => 'error', 'message' => 'Vui lòng điền đầy đủ thông tin cá nhân');
+                    }
+
+                    $invoiceInfo['data'] = [
+                        'name' => $request->personal_name,
+                        'id_number' => $request->personal_id,
+                        'phone' => $request->personal_phone,
+                        'email' => $request->personal_email,
+                        'address' => $request->personal_address
+                    ];
+                } elseif ($request->invoiceType == 'business') {
+                    // Validate thông tin doanh nghiệp
+                    if (empty($request->business_name) || empty($request->business_tax) ||
+                            empty($request->business_phone) || empty($request->business_email) ||
+                            empty($request->business_address)) {
+                        return array('status' => 'error', 'message' => 'Vui lòng điền đầy đủ thông tin doanh nghiệp');
+                    }
+
+                    $invoiceInfo['data'] = [
+                        'company_name' => $request->business_name,
+                        'tax_code' => $request->business_tax,
+                        'phone' => $request->business_phone,
+                        'email' => $request->business_email,
+                        'address' => $request->business_address
+                    ];
+                }
+            }
+
+
             $invoiceSave = new Invoice();
             $invoiceSave->platform = $platform;
             $invoiceSave->invoice_id = $invoiceId;
@@ -333,6 +376,11 @@ class InvoiceController extends Controller {
             $invoiceSave->last_number_live = $currenLive;
             $invoiceSave->invoice_type = $invoiceType;
             $invoiceSave->log = Utils::timeToStringGmT7(time()) . " $user->user_name created invoice";
+            if ($invoiceInfo) {
+                $invoiceSave->vat_invoice_info = json_encode($invoiceInfo);
+                $user->vat_invoice_info = json_encode($invoiceInfo);
+                $user->save();
+            }
             $invoiceSave->save();
 //            $app = Config::get('config.app_url');
 //            $message = "[INVOICE] Tài khoản " . strtoupper($user->user_name) . " vừa tạo hóa đơn $package->package_code/$month tháng (" . number_format($money, 0, ',', '.') . ").  <a href='$app/invoice?id=$invoiceId'><b>Đi kiểm tra</b></a>.";

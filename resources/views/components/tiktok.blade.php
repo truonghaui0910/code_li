@@ -399,6 +399,7 @@
                             </div>
 
                         </div>
+                        @if($isTiktokMulti)
                             <div class="row">
                                 <div class="col-md-4">
                                     <div class="form-group row">
@@ -431,6 +432,7 @@
                                     </div>
                                 </div>
                             </div>
+                        @endif
                         <button type="button" class="btn btn-outline-violet waves-effect waves-primary btn-save-live "
                             <?php echo $user_login->status == 0 ? 'disabled' : ''; ?>>Auto live</button>
                         @if ($user_login->status == 0)
@@ -1885,24 +1887,36 @@ function showProductSetModal(liveId) {
 /**
  * Hiển thị modal cấu hình thời gian pin
  */
+//function showPinConfigModal(profileId) {
+//    // Thiết lập thông tin profile
+//    $('#pin_config_profile_id').val(profileId);
+//    
+//    // Tải danh sách bộ sản phẩm cho dropdown
+//    loadProductSetsForSelect();
+//    
+//    // Tải cấu hình pin hiện tại (nếu có)
+//    loadCurrentPinConfig(profileId);
+//    
+//    // Mặc định chọn kiểu 1
+//    $('input[name="pin_type"][value="interval"]').prop('checked', true);
+//    togglePinConfigType('interval');
+//    
+//    // Hiển thị modal
+//    $('#dialog_pin_config').modal('show');
+//}
 function showPinConfigModal(profileId) {
     // Thiết lập thông tin profile
     $('#pin_config_profile_id').val(profileId);
     
-    // Tải danh sách bộ sản phẩm cho dropdown
-    loadProductSetsForSelect();
-    
-    // Tải cấu hình pin hiện tại (nếu có)
-    loadCurrentPinConfig(profileId);
-    
-    // Mặc định chọn kiểu 1
-    $('input[name="pin_type"][value="interval"]').prop('checked', true);
-    togglePinConfigType('interval');
+    // Tải danh sách bộ sản phẩm cho dropdown trước
+    loadProductSetsForSelect(function() {
+        // Sau khi tải danh sách bộ sản phẩm xong, tải cấu hình pin hiện tại
+        loadCurrentPinConfig(profileId);
+    });
     
     // Hiển thị modal
     $('#dialog_pin_config').modal('show');
 }
-
 function loadCurrentPinConfig(profileId) {
     $.ajax({
         url: '/tiktok/get-pin-config',
@@ -1911,34 +1925,267 @@ function loadCurrentPinConfig(profileId) {
             profile_id: profileId
         },
         success: function(response) {
+            // Mặc định là không pin sản phẩm
+            $('#enable_auto_pin').prop('checked', false);
+            $('.pin-config-container').hide();
+            
             if (response.status === 'success' && response.pin_config) {
                 const pinConfig = response.pin_config;
                 
-                // Thiết lập kiểu pin
-                $(`input[name="pin_type"][value="${pinConfig.pin_type}"]`).prop('checked', true);
-                togglePinConfigType(pinConfig.pin_type);
-                
-                // Thiết lập bộ sản phẩm
+                // Thiết lập bộ sản phẩm - dropdown đã được tải trước đó
                 if (pinConfig.product_set_id) {
                     $('#select_product_set').val(pinConfig.product_set_id);
+                    $('#pin_config_set_id').val(pinConfig.product_set_id);
                 }
                 
-                // Thiết lập khoảng thời gian (nếu kiểu 1)
+                // Hiển thị option pin sản phẩm nếu có
+                if (pinConfig.is_autopin) {
+                    $('#enable_auto_pin').prop('checked', true);
+                    $('.pin-config-container').show();
+                }
+                
+                // Thiết lập kiểu pin
+                if (pinConfig.pin_type) {
+                    $(`input[name="pin_type"][value="${pinConfig.pin_type}"]`).prop('checked', true);
+                    changeTabPinType(pinConfig.pin_type);
+                } else {
+                    // Mặc định chọn kiểu interval
+                    $('input[name="pin_type"][value="interval"]').prop('checked', true);
+                    changeTabPinType('interval');
+                }
+                
+                // Thiết lập khoảng thời gian (nếu kiểu interval)
                 if (pinConfig.pin_type === 'interval' && pinConfig.interval) {
-                    $('#pin_interval').val(pinConfig.interval);
+                    // Chuyển đổi từ giây sang phút
+                    const minutes = Math.ceil(pinConfig.interval / 60);
+                    $('#pin_interval').val(minutes);
                 }
                 
-                // Thiết lập thời gian pin cụ thể (nếu kiểu 2)
+                // Thiết lập thời gian pin cụ thể (nếu kiểu specific)
                 if (pinConfig.pin_type === 'specific' && pinConfig.products) {
                     // Tải danh sách sản phẩm của bộ
                     if (pinConfig.product_set_id) {
                         loadProductSetForPinConfig(pinConfig.product_set_id, pinConfig.products);
                     }
                 }
+            } else {
+                // Nếu không có cấu hình, mặc định chọn kiểu interval
+                $('input[name="pin_type"][value="interval"]').prop('checked', true);
+                changeTabPinType('interval');
             }
         }
     });
 }
+
+
+function changeTabPinType(type) {
+    // Cập nhật radio button
+    $(`input[name="pin_type"][value="${type}"]`).prop('checked', true);
+    
+    // Ẩn tất cả tab content
+    $('.pin-type-tab-content').hide();
+    
+    // Bỏ active tất cả tab
+    $('.pin-type-tab').removeClass('active');
+    
+    // Hiển thị tab được chọn
+    $(`#${type}_config`).show();
+    $(`.pin-type-tab[data-type="${type}"]`).addClass('active');
+    
+    // Tải danh sách sản phẩm nếu đã chọn bộ sản phẩm và đang ở tab specific
+    if (type === 'specific') {
+        const selectedSetId = $('#select_product_set').val();
+        if (selectedSetId) {
+            loadProductSetForPinConfig(selectedSetId);
+        }
+    }
+}
+
+function savePinConfig() {
+    const profileId = $('#pin_config_profile_id').val();
+    const productSetId = $('#select_product_set').val();
+    const enableAutoPin = $('#enable_auto_pin').is(':checked');
+    const pinType = $('input[name="pin_type"]:checked').val();
+    
+    if (!productSetId) {
+        showNotification('error', 'Vui lòng chọn bộ sản phẩm');
+        return;
+    }
+    
+    // Tạo data để gửi lên server
+    const formData = new FormData();
+    formData.append('_token', $('input[name="_token"]').val());
+    formData.append('profile_id', profileId);
+    formData.append('product_set_id', productSetId);
+    formData.append('pin_type', pinType);
+    formData.append('is_autopin', enableAutoPin ? 1 : 0);
+    
+    // Nếu bật tự động pin, thêm các thông tin cấu hình pin
+    if (enableAutoPin) {
+        if (pinType === 'interval') {
+            // Cấu hình kiểu 1: Khoảng thời gian
+            const minutes = $('#pin_interval').val();
+            
+            if (!minutes || isNaN(minutes) || parseInt(minutes) < 1) {
+                showNotification('error', 'Vui lòng nhập khoảng thời gian hợp lệ (tối thiểu 1 phút)');
+                return;
+            }
+            
+            // Chuyển đổi từ phút sang giây khi gửi lên server
+            const seconds = parseInt(minutes) * 60;
+            formData.append('interval', seconds);
+        } else {
+            // Cấu hình kiểu 2: Thời điểm cụ thể
+            const products = [];
+            let hasValidTimes = false;
+            
+            $('#pin_time_items tr').each(function() {
+                const productId = $(this).data('product-id');
+                const pinTime = $(this).find('.pin-time').val();
+                
+                // Chỉ thêm sản phẩm có thời gian hợp lệ
+                if (pinTime && !isNaN(pinTime) && parseInt(pinTime) >= 0) {
+                    products.push({
+                        product_id: productId,
+                        pin_time: parseInt(pinTime)
+                    });
+                    hasValidTimes = true;
+                }
+            });
+            
+            if (!hasValidTimes) {
+                showNotification('error', 'Vui lòng nhập ít nhất một thời gian pin hợp lệ');
+                return;
+            }
+            
+            // Sắp xếp sản phẩm theo thời gian pin tăng dần
+            products.sort((a, b) => a.pin_time - b.pin_time);
+            
+            formData.append('products', JSON.stringify(products));
+        }
+    }
+    
+    // Gửi request để lưu cấu hình
+    $.ajax({
+        url: '/tiktok/save-pin-config',
+        type: 'POST',
+        data: formData,
+        processData: false,
+        contentType: false,
+        beforeSend: function() {
+            $('#btn_save_pin_config').prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Đang lưu...');
+        },
+        success: function(response) {
+            $('#btn_save_pin_config').prop('disabled', false).html('<i class="fa fa-save"></i> Lưu cấu hình');
+            
+            if (response.status === 'success') {
+                showNotification('success', 'Đã lưu cấu hình pin sản phẩm thành công');
+                
+                // Đóng modal
+                $('#dialog_pin_config').modal('hide');
+            } else {
+                showNotification('error', response.message || 'Có lỗi xảy ra khi lưu cấu hình');
+            }
+        },
+        error: function() {
+            $('#btn_save_pin_config').prop('disabled', false).html('<i class="fa fa-save"></i> Lưu cấu hình');
+            showNotification('error', 'Đã xảy ra lỗi khi lưu cấu hình');
+        }
+    });
+}
+
+//function savePinConfig() {
+//    const profileId = $('#pin_config_profile_id').val();
+//    const productSetId = $('#select_product_set').val();
+//    const enableAutoPin = $('#enable_auto_pin').is(':checked');
+//    const pinType = $('input[name="pin_type"]:checked').val();
+//    
+//    if (!productSetId) {
+//        showNotification('error', 'Vui lòng chọn bộ sản phẩm');
+//        return;
+//    }
+//    
+//    // Tạo data để gửi lên server
+//    const formData = new FormData();
+//    formData.append('_token', $('input[name="_token"]').val());
+//    formData.append('profile_id', profileId);
+//    formData.append('product_set_id', productSetId);
+//    formData.append('pin_type', pinType);
+//    formData.append('is_autopin', enableAutoPin ? 1 : 0);
+//    
+//    // Nếu bật tự động pin, thêm các thông tin cấu hình pin
+//    if (enableAutoPin) {
+//        if (pinType === 'interval') {
+//            // Cấu hình kiểu 1: Khoảng thời gian
+//            const minutes = $('#pin_interval').val();
+//            
+//            if (!minutes || isNaN(minutes) || parseInt(minutes) < 1) {
+//                showNotification('error', 'Vui lòng nhập khoảng thời gian hợp lệ (tối thiểu 1 phút)');
+//                return;
+//            }
+//            
+//            // Chuyển đổi từ phút sang giây khi gửi lên server
+//            const seconds = parseInt(minutes) * 60;
+//            formData.append('interval', seconds);
+//        } else {
+//            // Cấu hình kiểu 2: Thời điểm cụ thể
+//            const products = [];
+//            let hasValidTimes = false;
+//            
+//            $('#pin_time_items tr').each(function() {
+//                const productId = $(this).data('product-id');
+//                const pinTime = $(this).find('.pin-time').val();
+//                
+//                // Chỉ thêm sản phẩm có thời gian hợp lệ
+//                if (pinTime && !isNaN(pinTime) && parseInt(pinTime) >= 0) {
+//                    products.push({
+//                        product_id: productId,
+//                        pin_time: parseInt(pinTime)
+//                    });
+//                    hasValidTimes = true;
+//                }
+//            });
+//            
+//            if (!hasValidTimes) {
+//                showNotification('error', 'Vui lòng nhập ít nhất một thời gian pin hợp lệ');
+//                return;
+//            }
+//            
+//            // Sắp xếp sản phẩm theo thời gian pin tăng dần
+//            products.sort((a, b) => a.pin_time - b.pin_time);
+//            
+//            formData.append('products', JSON.stringify(products));
+//        }
+//    }
+//    
+//    // Gửi request để lưu cấu hình
+//    $.ajax({
+//        url: '/tiktok/save-pin-config',
+//        type: 'POST',
+//        data: formData,
+//        processData: false,
+//        contentType: false,
+//        beforeSend: function() {
+//            $('#btn_save_pin_config').prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Đang lưu...');
+//        },
+//        success: function(response) {
+//            $('#btn_save_pin_config').prop('disabled', false).html('<i class="fa fa-save"></i> Lưu cấu hình');
+//            
+//            if (response.status === 'success') {
+//                showNotification('success', 'Đã lưu cấu hình pin sản phẩm thành công');
+//                
+//                // Đóng modal
+//                $('#dialog_pin_config').modal('hide');
+//            } else {
+//                showNotification('error', response.message || 'Có lỗi xảy ra khi lưu cấu hình');
+//            }
+//        },
+//        error: function() {
+//            $('#btn_save_pin_config').prop('disabled', false).html('<i class="fa fa-save"></i> Lưu cấu hình');
+//            showNotification('error', 'Đã xảy ra lỗi khi lưu cấu hình');
+//        }
+//    });
+//}
 
 /**
  * Tải danh sách bộ sản phẩm đã lưu
@@ -2036,7 +2283,7 @@ function renderProductSets() {
 /**
  * Tải danh sách bộ sản phẩm cho dropdown
  */
-function loadProductSetsForSelect() {
+function loadProductSetsForSelect(callback) {
     $.ajax({
         url: '/tiktok/get-product-sets',
         type: 'GET',
@@ -2050,6 +2297,11 @@ function loadProductSetsForSelect() {
                 });
                 
                 $('#select_product_set').html(options);
+                
+                // Gọi callback nếu được cung cấp
+                if (typeof callback === 'function') {
+                    callback();
+                }
             }
         }
     });
@@ -2516,94 +2768,6 @@ function loadProductSetForPinConfig(setId, existingPinTimes) {
 }
 
 /**
- * Lưu cấu hình pin sản phẩm
- */
-function savePinConfig() {
-    const profileId = $('#pin_config_profile_id').val();
-    const productSetId = $('#select_product_set').val();
-    const pinType = $('input[name="pin_type"]:checked').val();
-    
-    if (!productSetId) {
-        showNotification('error', 'Vui lòng chọn bộ sản phẩm');
-        return;
-    }
-    
-    // Tạo data để gửi lên server
-    const formData = new FormData();
-    formData.append('_token', $('input[name="_token"]').val());
-    formData.append('profile_id', profileId);
-    formData.append('product_set_id', productSetId);
-    formData.append('pin_type', pinType);
-    
-    if (pinType === 'interval') {
-        // Cấu hình kiểu 1: Khoảng thời gian
-        const interval = $('#pin_interval').val();
-        
-        if (!interval || isNaN(interval) || parseInt(interval) < 30) {
-            showNotification('error', 'Vui lòng nhập khoảng thời gian hợp lệ (tối thiểu 30 giây)');
-            return;
-        }
-        
-        formData.append('interval', interval);
-    } else {
-        // Cấu hình kiểu 2: Thời điểm cụ thể
-        const products = [];
-        let isValid = true;
-        
-        $('#pin_time_items tr').each(function() {
-            const productId = $(this).data('product-id');
-            const pinTime = $(this).find('.pin-time').val();
-            
-            if (!pinTime || isNaN(pinTime) || parseInt(pinTime) < 0) {
-                showNotification('error', 'Vui lòng nhập thời gian pin hợp lệ cho tất cả sản phẩm');
-                isValid = false;
-                return false; // Break the loop
-            }
-            
-            products.push({
-                product_id: productId,
-                pin_time: parseInt(pinTime)
-            });
-        });
-        
-        if (!isValid) return;
-        
-        // Sắp xếp sản phẩm theo thời gian pin tăng dần
-        products.sort((a, b) => a.pin_time - b.pin_time);
-        
-        formData.append('products', JSON.stringify(products));
-    }
-    
-    // Gửi request để lưu cấu hình
-    $.ajax({
-        url: '/tiktok/save-pin-config',
-        type: 'POST',
-        data: formData,
-        processData: false,
-        contentType: false,
-        beforeSend: function() {
-            $('#btn_save_pin_config').prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Đang lưu...');
-        },
-        success: function(response) {
-            $('#btn_save_pin_config').prop('disabled', false).html('<i class="fa fa-save"></i> Lưu cấu hình');
-            
-            if (response.status === 'success') {
-                showNotification('success', 'Đã lưu cấu hình pin sản phẩm thành công');
-                
-                // Đóng modal
-                $('#dialog_pin_config').modal('hide');
-            } else {
-                showNotification('error', response.message || 'Có lỗi xảy ra khi lưu cấu hình');
-            }
-        },
-        error: function() {
-            $('#btn_save_pin_config').prop('disabled', false).html('<i class="fa fa-save"></i> Lưu cấu hình');
-            showNotification('error', 'Đã xảy ra lỗi khi lưu cấu hình');
-        }
-    });
-}
-
-/**
  * Định dạng giá tiền
  */
 function formatPrice(price) {
@@ -2673,7 +2837,9 @@ $(document).ready(function() {
     
     $('#select_product_set').change(function() {
         const selectedSetId = $(this).val();
-        if (selectedSetId) {
+        $('#pin_config_set_id').val(selectedSetId);
+        
+        if (selectedSetId && $('#enable_auto_pin').is(':checked')) {
             if ($('input[name="pin_type"]:checked').val() === 'specific') {
                 loadProductSetForPinConfig(selectedSetId);
             }
@@ -2690,6 +2856,29 @@ $(document).ready(function() {
     // Sự kiện cho nút lưu cấu hình pin
     $('#btn_save_pin_config').click(function() {
         savePinConfig();
+    });
+    
+    // Khi đóng modal, reset form
+    $('#dialog_pin_config').on('hidden.bs.modal', function() {
+        $('#frmPinConfig')[0].reset();
+        $('#pin_time_items').empty();
+        $('.pin-config-container').hide();
+    });
+    
+    $('#enable_auto_pin').change(function() {
+        if ($(this).is(':checked')) {
+            $('.pin-config-container').slideDown();
+            
+            // Tải danh sách sản phẩm nếu đang ở tab specific
+            if ($('input[name="pin_type"]:checked').val() === 'specific') {
+                const selectedSetId = $('#select_product_set').val();
+                if (selectedSetId) {
+                    loadProductSetForPinConfig(selectedSetId);
+                }
+            }
+        } else {
+            $('.pin-config-container').slideUp();
+        }
     });
 });    
     </script>

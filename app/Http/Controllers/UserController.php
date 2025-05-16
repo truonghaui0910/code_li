@@ -280,14 +280,20 @@ class UserController extends Controller {
         $validator = Validator::make($request->all(), [
                     'user_name' => 'required|string|unique:users,user_name,' . $u_name . '|regex:/^([a-zA-Z0-9]+[\ \-]?)+[a-zA-Z0-9]+$/im',
                     'user_name' => 'required|string|unique:zliveaccount,user_name,' . $u_name . '|regex:/^([a-zA-Z0-9]+[\ \-]?)+[a-zA-Z0-9]+$/im',
-//                    'phone' => 'unique:users,phone,'.$request->phone,
+                    'email' => 'required|email|unique:users,email',
+                    'phone' => 'required|regex:/^[0-9]{10,15}$/|unique:users,phone',
                     'password' => 'required|min:3|max:32',
                     'g-recaptcha-response' => 'required|captcha',
                     'password_confirmation' => 'required|same:password'], [
                     'user_name.required' => trans('label.validate.user_name.required'),
                     'user_name.unique' => trans('label.validate.user_name.unique'),
                     'user_name.regex' => trans('label.validate.user_name.regex'),
-//                    'phone.unique' => 'Số điện thoại đã dược sử dụng',
+                    'email.required' => 'Bạn phải nhập email',
+                    'email.email' => 'Email không đúng định dạng',
+                    'email.unique' => 'Email đã được sử dụng',
+                    'phone.required' => 'Bạn phải nhập số điện thoại',
+                    'phone.regex' => 'Số điện thoại phải từ 10-15 chữ số',
+                    'phone.unique' => 'Số điện thoại đã được sử dụng',
                     'password.required' => trans('label.validate.password.required'),
                     'password.min' => trans('label.validate.password.min', ['values' => '3']),
                     'password.max' => trans('label.validate.password.max', ['values' => '32']),
@@ -327,6 +333,7 @@ class UserController extends Controller {
         $user->customer_id = $customerId;
         $user->facebook = $request->facebook;
         $user->phone = $request->phone;
+        $user->email = $request->email;
         $user->password = bcrypt(trim($request->password));
         $user->password_plaintext = trim($request->password);
         $user->user_name = $userName;

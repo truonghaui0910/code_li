@@ -47,6 +47,107 @@
                             <p class="payment-pending m-t-10 more"><strong>Trạng thái: </strong> <span class="badge badge-warning"><i class="ion-load-c fa-spin"></i> Đang chờ xử lý</span></p>
                         </div>
                     </div>
+                                        <!-- Phần hóa đơn mới -->
+                    <div class="row m-t-30">
+                        <div class="col-md-12">
+                            <div class="card-box p-20">
+                                <!--<h5 class="header-title m-b-20">Thông tin xuất hóa đơn</h5>-->
+                                <div class="form-check m-b-20">
+                                    <input type="checkbox" class="form-check-input" id="needInvoice">
+                                    <label class="" for="needInvoice">
+                                        Lấy hóa đơn
+                                    </label>
+                                </div>
+                                
+                                <div id="invoiceOptions" style="display: none;">
+                                    <div class="form-group m-b-20">
+                                        <label>Loại hóa đơn:</label>
+                                        <div class="radio radio-primary">
+                                            <input type="radio" name="invoiceType" id="personal" value="personal">
+                                            <label for="personal">Cá nhân</label>
+                                        </div>
+                                        <div class="radio radio-primary">
+                                            <input type="radio" name="invoiceType" id="business" value="business">
+                                            <label for="business">Doanh nghiệp</label>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Form cho cá nhân -->
+                                    <div id="personalForm" style="display: none;">
+                                        <div class="row">
+                                            <div class="col-md-6">
+                                                <div class="form-group">
+                                                    <label>Họ tên <span class="text-danger">*</span></label>
+                                                    <input type="text" class="form-control" name="personal_name" id="personal_name">
+                                                </div>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <div class="form-group">
+                                                    <label>Số CCCD <span class="text-danger">*</span></label>
+                                                    <input type="text" class="form-control" name="personal_id" id="personal_id">
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="row">
+                                            <div class="col-md-6">
+                                                <div class="form-group">
+                                                    <label>Số điện thoại <span class="text-danger">*</span></label>
+                                                    <input type="text" class="form-control" name="personal_phone" id="personal_phone">
+                                                </div>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <div class="form-group">
+                                                    <label>Email <span class="text-danger">*</span></label>
+                                                    <input type="email" class="form-control" name="personal_email" id="personal_email">
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Địa chỉ <span class="text-danger">*</span></label>
+                                            <textarea class="form-control" name="personal_address" id="personal_address" rows="2"></textarea>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Form cho doanh nghiệp -->
+                                    <div id="businessForm" style="display: none;">
+                                        <div class="row">
+                                            <div class="col-md-6">
+                                                <div class="form-group">
+                                                    <label>Tên công ty <span class="text-danger">*</span></label>
+                                                    <input type="text" class="form-control" name="business_name" id="business_name">
+                                                </div>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <div class="form-group">
+                                                    <label>Mã số thuế <span class="text-danger">*</span></label>
+                                                    <input type="text" class="form-control" name="business_tax" id="business_tax">
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="row">
+                                            <div class="col-md-6">
+                                                <div class="form-group">
+                                                    <label>Số điện thoại <span class="text-danger">*</span></label>
+                                                    <input type="text" class="form-control" name="business_phone" id="business_phone">
+                                                </div>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <div class="form-group">
+                                                    <label>Email <span class="text-danger">*</span></label>
+                                                    <input type="email" class="form-control" name="business_email" id="business_email">
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Địa chỉ <span class="text-danger">*</span></label>
+                                            <textarea class="form-control" name="business_address" id="business_address" rows="2"></textarea>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Kết thúc phần hóa đơn mới -->
                     <div class="row">
                         <div class="col-md-12">
                             <div class="table-responsive">
@@ -195,7 +296,76 @@
     var price = $("#pr").val();
     var invoice = $("#iv").val();
     var subtotal = price;
+    
 //    createQr(price, invoice, 'canvas_qr');
+    // JavaScript cho phần hóa đơn
+   $('#needInvoice').change(function() {
+        if($(this).is(':checked')) {
+            $('#invoiceOptions').show();
+            $('#need_invoice').val('1');
+            // Mặc định chọn personal
+            $('#personal').prop('checked', true);
+            $('#invoice_type').val('personal');
+            $('#personalForm').show();
+            $('#businessForm').hide();
+        } else {
+            $('#invoiceOptions').hide();
+            $('#personalForm').hide();
+            $('#businessForm').hide();
+            $('input[name="invoiceType"]').prop('checked', false);
+            $('#need_invoice').val('0');
+            $('#invoice_type').val('');
+            // Clear all form fields
+            $('#personalForm input, #personalForm textarea').val('');
+            $('#businessForm input, #businessForm textarea').val('');
+        }
+    });
+    
+    $('input[name="invoiceType"]').change(function() {
+        var selectedType = $(this).val();
+        $('#invoice_type').val(selectedType);
+        
+        if(selectedType === 'personal') {
+            $('#personalForm').show();
+            $('#businessForm').hide();
+            // Clear business form
+            $('#businessForm input, #businessForm textarea').val('');
+        } else if(selectedType === 'business') {
+            $('#businessForm').show();
+            $('#personalForm').hide();
+            // Clear personal form
+            $('#personalForm input, #personalForm textarea').val('');
+        }
+    });
+    
+    // Validate invoice form before submission
+    function validateInvoiceForm() {
+        if($('#needInvoice').is(':checked')) {
+            var invoiceType = $('input[name="invoiceType"]:checked').val();
+            
+            if(!invoiceType) {
+                $.Notification.autoHideNotify('error', 'top center', 'Lỗi', 'Vui lòng chọn loại hóa đơn');
+                return false;
+            }
+            
+            if(invoiceType === 'personal') {
+                if(!$('#personal_name').val() || !$('#personal_id').val() || 
+                   !$('#personal_phone').val() || !$('#personal_email').val() || 
+                   !$('#personal_address').val()) {
+                    $.Notification.autoHideNotify('error', 'top center', 'Lỗi', 'Vui lòng điền đầy đủ thông tin cá nhân');
+                    return false;
+                }
+            } else if(invoiceType === 'business') {
+                if(!$('#business_name').val() || !$('#business_tax').val() || 
+                   !$('#business_phone').val() || !$('#business_email').val() || 
+                   !$('#business_address').val()) {
+                    $.Notification.autoHideNotify('error', 'top center', 'Lỗi', 'Vui lòng điền đầy đủ thông tin doanh nghiệp');
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
     $(".btn-month-payment").click(function () {
         $(".btn-month").removeClass("pricing-box-active");
         $(this).addClass("pricing-box-active");
@@ -288,14 +458,33 @@
             $this.data('original-text', $(this).html());
             $this.html(loadingText);
         }
-        createQr(subtotal, invoice, 'canvas_qr_2');
-        $('#dialog_confirm_payment').modal({
-            backdrop: true
-        });
+
         
         var form = $("#form-invoice");
         var formData = form.serialize();
-                $.ajax({
+        
+        formData += '&needInvoice=' + ($('#needInvoice').is(':checked') ? 1 : 0);
+        
+        if($('#needInvoice').is(':checked')) {
+            var invoiceType = $('input[name="invoiceType"]:checked').val();
+            formData += '&invoiceType=' + invoiceType;
+            
+            if(invoiceType === 'personal') {
+                formData += '&personal_name=' + encodeURIComponent($('#personal_name').val());
+                formData += '&personal_id=' + encodeURIComponent($('#personal_id').val());
+                formData += '&personal_phone=' + encodeURIComponent($('#personal_phone').val());
+                formData += '&personal_email=' + encodeURIComponent($('#personal_email').val());
+                formData += '&personal_address=' + encodeURIComponent($('#personal_address').val());
+            } else if(invoiceType === 'business') {
+                formData += '&business_name=' + encodeURIComponent($('#business_name').val());
+                formData += '&business_tax=' + encodeURIComponent($('#business_tax').val());
+                formData += '&business_phone=' + encodeURIComponent($('#business_phone').val());
+                formData += '&business_email=' + encodeURIComponent($('#business_email').val());
+                formData += '&business_address=' + encodeURIComponent($('#business_address').val());
+            }
+        }
+        
+        $.ajax({
             type: "POST",
             url: "/postInvoice",
             data: formData,
@@ -305,9 +494,15 @@
                 $this.html($this.data('original-text'));
                 $this.attr("disabled", true);
                 $.Notification.autoHideNotify(data.status, 'top center', notifyTitle, data.message);
-//                setTimeout(function(){redirectProfile();}, 3000);
-//                $('#dialog_confirm_payment').modal('toggle');
-                $('.payment-pending').show();
+                if(data.status=="success"){
+                    createQr(subtotal, invoice, 'canvas_qr_2');
+                    $('#dialog_confirm_payment').modal({
+                        backdrop: true
+                    });
+                    $('.payment-pending').show();
+                }else{
+                    $this.attr("disabled", false);
+                }
             },
             error: function (data) {
                 $this.html($this.data('original-text'));

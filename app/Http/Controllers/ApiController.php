@@ -13,11 +13,15 @@ use App\Http\Models\TiktokFakeChannel;
 use App\Http\Models\TiktokProfile;
 use App\Http\Models\Zliveautolive;
 use App\Http\Models\Zliveclient;
-use File;
+use App\User;
+use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Response;
 use Log;
+use function GuzzleHttp\json_decode;
+use function GuzzleHttp\json_encode;
+use function public_path;
+use function response;
 
 class ApiController extends Controller {
 
@@ -421,12 +425,13 @@ class ApiController extends Controller {
     }
 
     public function scanEndAlarmRecords() {
+        $locker = new Locker(14506);
+        $locker->lock();
         // Lấy thời gian hiện tại
         $currentTime = time();
 
-        $records = Zliveautolive::whereIn("user_id", ["damnga0203_1745514140"])
-                ->where('end_alarm', '>', 0)
-                ->where('is_cheat', 2)
+        $records = Zliveautolive::where('end_alarm', '>', 0)
+                ->whereIn('is_report', [2, 3, 4])
                 ->where('end_alarm', '<=', $currentTime)
                 ->where('del_status', 0)
                 ->get();
@@ -435,7 +440,7 @@ class ApiController extends Controller {
         foreach ($records as $record) {
             try {
                 shell_exec("/home/tiktok_tools/env/bin/python /home/tiktok_tools/tiktok_helper_7_capt.py live_finish $record->tiktok_profile_id");
-                $record->is_cheat = 3;
+                $record->is_report = 5;
                 $record->estimate_time_run = 0;
                 $record->status = 3;
                 $record->action_log = $record->action_log . Utils::timeToStringGmT7(time()) . " System stopped due to end_alarm time reached" . PHP_EOL;
@@ -444,17 +449,19 @@ class ApiController extends Controller {
                 CommandController::addCommandKillAll($record);
                 $processedCount++;
                 Log::info("TiktokController.scanEndAlarmRecords: #$record->id: ");
-            } catch (\Exception $e) {
+            } catch (Exception $e) {
                 Log::error("TiktokController.scanEndAlarmRecords: Lỗi khi xử lý live #$record->id: " . $e->getMessage());
             }
         }
 
 
-
+        $locker->unlock();
         return $processedCount;
     }
 
     public function scanStartAlarmRecords() {
+        $locker = new Locker(14506);
+        $locker->lock();
         // Lấy thời gian hiện tại
         $currentTime = time();
 
@@ -463,7 +470,7 @@ class ApiController extends Controller {
         // start_alarm <= currentTime: thời gian bắt đầu đã đến hoặc đã qua
         // start_alarm >= (currentTime - 300): không quét các lệnh đã bỏ lỡ quá 5 phút
         $records = Zliveautolive::where('status', 0)
-                ->where('is_cheat', 2)
+                ->where('is_report', 2)
                 ->where('del_status', 0)
                 ->where('start_alarm', '>', 0)
                 ->where('start_alarm', '<=', $currentTime)
@@ -471,7 +478,7 @@ class ApiController extends Controller {
                 ->get();
 
         $processedCount = 0;
-        Log::info("scanStartAlarmRecords " . count($records) . " pid=" . getmypid());
+        Log::info(__FUNCTION__ . " " . count($records) . " pid=" . getmypid());
 
         foreach ($records as $live) {
             try {
@@ -492,12 +499,20 @@ class ApiController extends Controller {
                 if ($sizeGB == 0) {
                     $sizeGB = 3;
                 }
-                CommandController::addCommandKillAll($live);
-                $client = Client::getAvailableFile($live, $sizeGB);
+//                CommandController::addCommandKillAll($live);
+//                $ips = ["95.217.153.132", "65.109.137.215", "65.108.218.156"];
+//                $randomIp = $ips[array_rand($ips)];
+//                $client = Zliveclient::where("client_id", $randomIp)->first();
+                $clTmp = Client::getOnlyAvailableUser("htAzEnx8d5AaHyj91745514140", $sizeGB);
+                if (isset($clTmp)) {
+                    $client = $clTmp;
+                } else {
+                    $client = Client::getAvailableFile($live, $sizeGB);
+                }
                 if (isset($client)) {
-                    $live->status = 1;
+                    $live->is_report = 6;
                     $live->save();
-                    $live->is_report = 0;
+                    $live->status = 1;
                     $live->server_id = $client->client_id;
                     $live->time_update = time();
                     $live->started_time = time();
@@ -518,28 +533,28 @@ class ApiController extends Controller {
                         //2024/02/27 vừa chạy mobile, vừa chạy studio
                         if ($live->command == "live_mobile") {
                             $cmd = "/home/tiktok_tools/env/bin/python /home/tiktok_tools/tiktok_helper_7_capt.py live_create_mobile $live->tiktok_profile_id";
-                            Log::info("system $cmd");
+                            Log::info(__FUNCTION__ . " $cmd");
                             $tmp = shell_exec($cmd);
                             $shell = trim($tmp);
-                            Log::info("system Shell " . $shell);
+                            Log::info(__FUNCTION__ . " Shell " . $shell);
                         } elseif ($live->command == "live_studio_v2") {
                             $cmd = "/home/tiktok_tools/env/bin/python /home/tiktok_tools/tiktok_helper_7_capt.py live_create_studio_v2 $live->tiktok_profile_id";
-                            Log::info("system $cmd");
+                            Log::info(__FUNCTION__ . " $cmd");
                             $tmp = shell_exec($cmd);
                             $shell = trim($tmp);
-                            Log::info("system Shell " . $shell);
+                            Log::info(__FUNCTION__ . " Shell " . $shell);
                         } elseif ($live->command == "live_studio_v3") {
                             $cmd = "/home/tiktok_tools/env/bin/python /home/tiktok_tools/tiktok_helper_7_capt.py live_create_studio_v3 $live->tiktok_profile_id";
-                            Log::info("system $cmd");
+                            Log::info(__FUNCTION__ . " $cmd");
                             $tmp = shell_exec($cmd);
                             $shell = trim($tmp);
-                            Log::info("system Shell " . $shell);
+                            Log::info(__FUNCTION__ . " Shell " . $shell);
                         } else {
                             $cmd = "/home/tiktok_tools/env/bin/python /home/tiktok_tools/tiktok_helper_7_capt.py live_create $live->tiktok_profile_id";
-                            Log::info("system $cmd");
+                            Log::info(__FUNCTION__ . " $cmd");
                             $tmp = shell_exec($cmd);
                             $shell = trim($tmp);
-                            Log::info("system Shell " . $shell);
+                            Log::info(__FUNCTION__ . " Shell " . $shell);
                         }
 
                         //2024/07/23 thử lại nếu Shell null
@@ -547,9 +562,9 @@ class ApiController extends Controller {
                             for ($n = 1; $n <= 2; $n++) {
                                 sleep(3);
                                 $tmp = shell_exec($cmd);
-                                Log::info("system retry$n $cmd");
+                                Log::info(__FUNCTION__ . " retry$n $cmd");
                                 $shell = trim($tmp);
-                                Log::info("system retry$n Shell " . $shell);
+                                Log::info(__FUNCTION__ . " retry$n Shell " . $shell);
                                 if ($shell != null && $shell != "") {
                                     break;
                                 }
@@ -619,7 +634,7 @@ class ApiController extends Controller {
                             if (count($m) == 2) {
                                 $streamId = $m[1];
                                 $cmd = "/home/tiktok_tools/env/bin/python /home/tiktok_tools/tiktok_helper_7_capt.py solve_captcha $live->tiktok_profile_id $roomId $streamId";
-                                Log::info("system $cmd");
+                                Log::info(__FUNCTION__ . " $cmd");
                                 $tmp = shell_exec($cmd);
                                 $live->action_log = $live->action_log . Utils::timeToStringGmT7(time()) . " system send command $cmd" . PHP_EOL;
                                 $live->action_log = $live->action_log . trim($tmp) . PHP_EOL;
@@ -630,14 +645,405 @@ class ApiController extends Controller {
                     Log::info("TiktokController.scanStartAlarmRecords: #$live->id: ");
                     $live->save();
                 }
-            } catch (\Exception $e) {
+            } catch (Exception $e) {
                 Log::error("TiktokController.scanStartAlarmRecords: Lỗi khi xử lý live #$live->id: " . $e->getMessage());
             }
         }
 
 
+        $locker->unlock();
+        return $processedCount;
+    }
+
+    //Cập nhật chính xác thời gian started_time cho các luồng live
+    public function updateLiveStartedTime() {
+        $locker = new Locker(14504);
+        $locker->lock();
+        // Lấy thời gian hiện tại
+        $currentTime = time();
+
+        // Lấy tất cả các live đang chạy và chưa cập nhật thời gian started_time
+        $lives = Zliveautolive::where('status', 2)
+                ->where('del_status', 0)
+                ->where('is_report', 6)
+                ->get();
+
+        $processedCount = 0;
+        Log::info(__FUNCTION__ . ": Tìm thấy " . count($lives) . " luồng live cần cập nhật thời gian bắt đầu" . " pid=" . getmypid());
+        foreach ($lives as $live) {
+            try {
+                // Cập nhật thời gian started_time là thời gian hiện tại
+                $live->started_time = $currentTime;
+                // Đánh dấu là đã cập nhật thời gian started_time
+                $live->is_report = 3;
+                $live->save();
+
+                $processedCount++;
+                Log::info(__FUNCTION__ . ": Đã cập nhật thời gian bắt đầu cho luồng live #{$live->id}: " . $currentTime);
+            } catch (Exception $e) {
+                Log::error(__FUNCTION__ . ": Lỗi khi cập nhật thời gian bắt đầu cho luồng live #{$live->id}: " . $e->getMessage());
+            }
+        }
+
+        $locker->unlock();
+        return $processedCount;
+    }
+
+    //Tự động thêm sản phẩm vào luồng live dựa theo cấu hình của profile
+    public function autoAddProductsToLive() {
+        $locker = new Locker(14502);
+        $locker->lock();
+        // Lấy thời gian hiện tại
+        $currentTime = time();
+
+        // Lấy tất cả các live đang chạy và đã cập nhật thời gian started_time
+        $lives = Zliveautolive::where('status', 2)
+                ->where('del_status', 0)
+                ->where('is_report', 3)
+                ->get();
+
+        $processedCount = 0;
+        Log::info(__FUNCTION__ . ": Tìm thấy " . count($lives) . " luồng live cần xử lý" . " pid=" . getmypid());
+
+        foreach ($lives as $live) {
+            try {
+                // Kiểm tra thời gian bắt đầu live
+                if (!$live->started_time) {
+                    Log::info(__FUNCTION__ . ": Luồng live #{$live->id} không có thời gian bắt đầu, bỏ qua");
+                    continue;
+                }
+
+                // Chỉ xử lý khi đã live ít nhất 5 phút
+                $liveStartedTime = $live->started_time; // Đã là timestamp
+                $elapsedMinutes = floor(($currentTime - $liveStartedTime) / 60);
+
+                if ($elapsedMinutes < 1) {
+                    Log::info(__FUNCTION__ . ": Luồng live #{$live->id} mới chạy được {$elapsedMinutes} phút, chưa đủ 1 phút, bỏ qua");
+                    continue;
+                }
+
+                // Lấy thông tin profile TikTok
+                $profile = TiktokProfile::where('id', $live->tiktok_profile_id)->first();
+                if (!$profile || !$profile->product_pin_config) {
+                    Log::info(__FUNCTION__ . ": Luồng live #{$live->id}: Không tìm thấy profile hoặc cấu hình pin");
+                    continue;
+                }
+
+                // Parse cấu hình pin
+                $pinConfig = json_decode($profile->product_pin_config, false); // Trả về object
+                if (!$pinConfig || !isset($pinConfig->product_set_id)) {
+                    Log::info(__FUNCTION__ . ": Luồng live #{$live->id}: Không có product_set_id trong cấu hình pin");
+                    continue;
+                }
+
+                $productSetId = $pinConfig->product_set_id;
+
+                // Lấy user sở hữu profile
+                $user = User::where('user_name', $profile->username)->first();
+                if (!$user || !$user->product_sets) {
+                    Log::info(__FUNCTION__ . ": Luồng live #{$live->id}: Không tìm thấy user hoặc product_sets");
+                    continue;
+                }
+
+                // Tìm bộ sản phẩm tương ứng
+                $productSets = json_decode($user->product_sets, false); // Trả về object
+                $selectedSet = null;
+
+                foreach ($productSets as $set) {
+                    if ($set->id == $productSetId) {
+                        $selectedSet = $set;
+                        break;
+                    }
+                }
+
+                if (!$selectedSet || empty($selectedSet->products)) {
+                    Log::info(__FUNCTION__ . ": Luồng live #{$live->id}: Không tìm thấy bộ sản phẩm hoặc bộ không có sản phẩm nào");
+                    continue;
+                }
+
+                // Thực hiện thêm sản phẩm vào luồng live
+                $addedCount = 0;
+                $totalProducts = count($selectedSet->products);
+
+                foreach ($selectedSet->products as $product) {
+                    if (!isset($product->product_id)) {
+                        continue;
+                    }
+
+                    $productId = $product->product_id;
+                    $link = "https://shop.tiktok.com/view/product/{$productId}?region=VN&local=en";
+
+                    // Sử dụng lệnh cmd mới để thêm sản phẩm vào livestream
+                    $cmd = "/home/tiktok_tools/env/bin/python /home/v21.autolive.vip/public_html/python.py product_add {$live->tiktok_profile_id} {$live->room_id} \"{$link}\"";
+                    Log::info(__FUNCTION__ . ": Thêm sản phẩm #{$productId} vào luồng live #{$live->id} - cmd: {$cmd}");
+
+                    $tmp = shell_exec($cmd);
+                    $shell = trim($tmp);
+
+                    if ($shell != null && $shell != "") {
+                        if (Utils::containString($shell, "permission")) {
+                            Log::info(__FUNCTION__ . ": Luồng live #{$live->id}: Tài khoản cần kích hoạt TikTok Shop");
+                            break;
+                        }
+
+                        $response = json_decode($shell, false); // Trả về object
+                        if (isset($response->code) && $response->code == 0 && isset($response->message) && $response->message == 'success') {
+                            $addedCount++;
+                            Log::info(__FUNCTION__ . ": Thêm thành công sản phẩm #{$productId} vào luồng live #{$live->id}");
+                        } else {
+                            Log::info(__FUNCTION__ . ": Lỗi khi thêm sản phẩm #{$productId} vào luồng live #{$live->id}: " . $shell);
+                        }
+                    } else {
+                        Log::info(__FUNCTION__ . ": Lỗi khi thêm sản phẩm #{$productId} vào luồng live #{$live->id}: Không có phản hồi");
+                    }
+
+                    // Tạm dừng 2 giây giữa các lần thêm sản phẩm để tránh quá tải API
+                    sleep(2);
+                }
+
+                // Đánh dấu là đã thêm sản phẩm vào luồng live
+                $live->is_report = 4; // Đánh dấu đã thêm sản phẩm
+                $live->save();
+
+                $processedCount++;
+                Log::info(__FUNCTION__ . ": Đã thêm {$addedCount}/{$totalProducts} sản phẩm vào luồng live #{$live->id}");
+            } catch (Exception $e) {
+                Log::error(__FUNCTION__ . ": Lỗi khi thêm sản phẩm vào luồng live #{$live->id}: " . $e->getMessage());
+            }
+        }
+        $locker->unlock();
+        return $processedCount;
+    }
+
+    //Tự động pin sản phẩm cho các luồng live đang chạy dựa trên cấu hình pin
+    public function autoProductPinning() {
+        // Sử dụng FileLock để tránh chạy đồng thời
+        $locker = new Locker(14503);
+        $locker->lock();
+
+        // Lấy thời gian hiện tại
+        $currentTime = time();
+
+        // Lấy tất cả các live đang chạy (status=2) và đã thêm sản phẩm (is_report=4)
+        $lives = Zliveautolive::where('status', 2)
+                ->where('del_status', 0)
+                ->where('is_report', 4)
+                ->get();
+
+        $processedCount = 0;
+//        Log::info(__FUNCTION__ . ": Tìm thấy " . count($lives) . " luồng live cần kiểm tra pin sản phẩm ". "pid=" . getmypid());
+
+        foreach ($lives as $live) {
+            try {
+                // Lấy thông tin profile TikTok
+                $profile = TiktokProfile::where('id', $live->tiktok_profile_id)->first();
+                if (!$profile || !$profile->product_pin_config) {
+                    continue;
+                }
+
+                // Parse cấu hình pin
+                $pinConfig = json_decode($profile->product_pin_config, false); // Trả về object
+                if (!$pinConfig || !isset($pinConfig->pin_type) || !isset($pinConfig->product_set_id)) {
+                    continue;
+                }
+
+                if (!isset($pinConfig->is_autopin) || $pinConfig->is_autopin === false) {
+                    continue;
+                }
+
+                // Lấy user sở hữu profile
+                $user = User::where('user_name', $profile->username)->first();
+                if (!$user || !$user->product_sets) {
+                    continue;
+                }
+
+                // Tìm bộ sản phẩm tương ứng
+                $productSets = json_decode($user->product_sets, false); // Trả về object
+                $selectedSet = null;
+
+                foreach ($productSets as $set) {
+                    if ($set->id == $pinConfig->product_set_id) {
+                        $selectedSet = $set;
+                        break;
+                    }
+                }
+
+                if (!$selectedSet || empty($selectedSet->products)) {
+                    continue;
+                }
+
+                // Kiểm tra nếu trường pinned_info chưa tồn tại trong cấu hình pin, khởi tạo
+                if (!isset($pinConfig->pinned_info)) {
+                    $pinConfig->pinned_info = new \stdClass();
+                    $pinConfig->pinned_info->last_pin_time = 0;
+                    $pinConfig->pinned_info->pinned_products = [];
+                    $pinConfig->pinned_info->current_index = 0;
+                }
+
+                // Xử lý theo kiểu pin
+                if ($pinConfig->pin_type === 'interval') {
+                    $this->processIntervalPinning($live, $profile, $pinConfig, $selectedSet);
+                } else if ($pinConfig->pin_type === 'specific') {
+                    $this->processSpecificPinning($live, $profile, $pinConfig, $selectedSet);
+                }
+
+                $processedCount++;
+            } catch (\Exception $e) {
+                Log::error(__FUNCTION__ . ": Lỗi khi xử lý pin sản phẩm cho luồng live #{$live->id}: " . $e->getMessage());
+            }
+        }
+
+//        Log::info(__FUNCTION__ . ": Đã xử lý {$processedCount} luồng live");
+        $locker->unlock();
 
         return $processedCount;
+    }
+
+    /**
+     * Xử lý pin sản phẩm theo khoảng thời gian
+     * @param Zliveautolive $live - Luồng live đang xử lý
+     * @param TiktokProfile $profile - Profile TikTok
+     * @param object $pinConfig - Cấu hình pin
+     * @param object $selectedSet - Bộ sản phẩm đã chọn
+     */
+    private function processIntervalPinning($live, $profile, $pinConfig, $selectedSet) {
+        $currentTime = time();
+
+        // Kiểm tra xem đã đến thời gian pin tiếp theo chưa
+        if ($currentTime < $pinConfig->pinned_info->last_pin_time + $pinConfig->interval) {
+            return;
+        }
+
+        // Lấy danh sách sản phẩm
+        $products = $selectedSet->products;
+        if (empty($products)) {
+            return;
+        }
+
+        // Lấy index của sản phẩm tiếp theo cần pin
+        $nextIndex = $pinConfig->pinned_info->current_index;
+
+        // Nếu index vượt quá số lượng sản phẩm, reset về 0
+        if ($nextIndex >= count($products)) {
+            $nextIndex = 0;
+        }
+
+        // Lấy sản phẩm cần pin
+        $product = $products[$nextIndex];
+
+        // Thực hiện pin sản phẩm
+        $success = $this->pinProduct($live, $profile, $product->product_id);
+
+        // Cập nhật thông tin pin
+        if ($success) {
+            $pinConfig->pinned_info->last_pin_time = $currentTime;
+            $pinConfig->pinned_info->current_index = $nextIndex + 1;
+
+            // Thêm sản phẩm vào danh sách đã pin
+            if (!in_array($product->product_id, $pinConfig->pinned_info->pinned_products)) {
+                $pinConfig->pinned_info->pinned_products[] = $product->product_id;
+            }
+
+            // Lưu lại cấu hình pin
+            $profile->product_pin_config = json_encode($pinConfig);
+            $profile->save();
+
+            Log::info("processIntervalPinning: Đã pin sản phẩm #{$product->product_id} cho luồng live #{$live->id}");
+        }
+    }
+
+    /**
+     * Xử lý pin sản phẩm theo thời điểm cụ thể
+     * @param Zliveautolive $live - Luồng live đang xử lý
+     * @param TiktokProfile $profile - Profile TikTok
+     * @param object $pinConfig - Cấu hình pin
+     * @param object $selectedSet - Bộ sản phẩm đã chọn
+     */
+    private function processSpecificPinning($live, $profile, $pinConfig, $selectedSet) {
+        // Kiểm tra thời gian bắt đầu live
+        if (!$live->started_time) {
+            return;
+        }
+
+        $currentTime = time();
+        $liveStartedTime = $live->started_time;
+        $elapsedMinutes = floor(($currentTime - $liveStartedTime) / 60);
+
+        // Lấy danh sách sản phẩm cần pin theo thời điểm cụ thể
+        $specificProducts = $pinConfig->products;
+        if (empty($specificProducts)) {
+            return;
+        }
+
+        // Kiểm tra từng sản phẩm
+        foreach ($specificProducts as $specificProduct) {
+            // Bỏ qua nếu đã pin
+            if (in_array($specificProduct->product_id, $pinConfig->pinned_info->pinned_products)) {
+                continue;
+            }
+
+            // Kiểm tra xem đã đến thời điểm pin chưa
+            if ($elapsedMinutes >= $specificProduct->pin_time) {
+                // Tìm thông tin sản phẩm trong bộ sản phẩm
+                $product = null;
+                foreach ($selectedSet->products as $p) {
+                    if ($p->product_id == $specificProduct->product_id) {
+                        $product = $p;
+                        break;
+                    }
+                }
+
+                if (!$product) {
+                    continue;
+                }
+
+                // Thực hiện pin sản phẩm
+                $success = $this->pinProduct($live, $profile, $product->product_id);
+
+                // Cập nhật thông tin pin
+                if ($success) {
+                    $pinConfig->pinned_info->last_pin_time = $currentTime;
+
+                    // Thêm sản phẩm vào danh sách đã pin
+                    $pinConfig->pinned_info->pinned_products[] = $product->product_id;
+
+                    // Lưu lại cấu hình pin
+                    $profile->product_pin_config = json_encode($pinConfig);
+                    $profile->save();
+
+                    Log::info("processSpecificPinning: Đã pin sản phẩm #{$product->product_id} cho luồng live #{$live->id} tại phút thứ {$specificProduct->pin_time}");
+                }
+            }
+        }
+    }
+
+    /**
+     * Thực hiện pin sản phẩm
+     * @param Zliveautolive $live - Luồng live đang xử lý
+     * @param TiktokProfile $profile - Profile TikTok
+     * @param string $productId - ID sản phẩm cần pin
+     * @return bool - Kết quả pin
+     */
+    private function pinProduct($live, $profile, $productId) {
+        $cmd = "/home/tiktok_tools/env/bin/python /home/v21.autolive.vip/public_html/python.py product_pin {$profile->id} {$live->room_id} {$productId}";
+        Log::info("pinProduct: Gọi lệnh pin sản phẩm: " . $cmd);
+
+        $tmp = shell_exec($cmd);
+        $shell = trim($tmp);
+
+        if ($shell == null || $shell == "") {
+            Log::error("pinProduct: Không có phản hồi khi pin sản phẩm #{$productId}");
+            return false;
+        }
+
+        $response = json_decode($shell, false);
+        if (isset($response->code) && $response->code == 0) {
+            return true;
+        } else {
+            $errorMsg = isset($response->message) ? $response->message : $shell;
+            Log::error("pinProduct: Lỗi khi pin sản phẩm #{$productId}: " . $errorMsg);
+            return false;
+        }
     }
 
 }

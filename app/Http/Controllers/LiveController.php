@@ -5,12 +5,11 @@ namespace App\Http\Controllers;
 use App\Common\Client;
 use App\Common\Network\RequestHelper;
 use App\Common\Utils;
-use App\Http\Models\Command;
-use App\Http\Models\Notify;
 use App\Http\Models\TiktokProfile;
 use App\Http\Models\Zliveautolive;
 use App\Http\Models\Zliveclient;
 use App\Http\Models\Zlivecustomer;
+use App\Http\Models\Zliveupdate;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -25,7 +24,7 @@ class LiveController extends Controller {
 
         if (isset($request->note) && $request->note != '') {
             if ($request->isAdmin) {
-                $datas = Zliveautolive::whereIn("del_status", [0, 1])->where("platform", 1)->where("id",trim($request->note))->orderBy("id", "desc");
+                $datas = Zliveautolive::whereIn("del_status", [0, 1])->where("platform", 1)->where("id", trim($request->note))->orderBy("id", "desc");
             } else {
                 $datas = Zliveautolive::where("del_status", 0)->where("user_id", $user->user_code)->where("platform", 1)->orderBy("id", "desc");
             }
@@ -141,7 +140,7 @@ class LiveController extends Controller {
             return array('status' => "error", 'message' => "Hãy liên hệ Admin để kích hoạt dùng thử");
         }
         $customer = Zlivecustomer::where("customer_id", $user->customer_id)->first();
-
+        $isUpdateSource = 0;
         //2023/03/15 thêm nhiều lệnh live 1 lúc
         $isMultyLive = 0;
         $arrayKey = explode("@;@", str_replace(array("\r\n", "\n"), "@;@", trim($request->key_live)));
@@ -253,15 +252,19 @@ class LiveController extends Controller {
             if (!$obj || $obj->user_id != $user->user_code) {
                 return array('status' => "error", 'message' => "Không tìm thấy thông tin");
             }
-            if ($obj->status == 1 || $obj->status == 2 || $obj->status == 4 || $obj->status == 6) {
-                return array('status' => "error", 'message' => "Hãy dừng live trước khi sửa thông tin");
+            //2025/05/08 cho phép sửa source khi đang live
+            if ($request->isUpdateSource || $request->isAdmin) {
+                if ($request->url_source != $obj->url_source) {
+                    $isUpdateSource = 1;
+                }
+            } else {
+                if ($obj->status == 1 || $obj->status == 2 || $obj->status == 4 || $obj->status == 6) {
+                    return array('status' => "error", 'message' => "Hãy dừng live trước khi sửa thông tin");
+                }
             }
         }
 
-        $obj->url_live = $request->url_live;
-        $obj->key_live = $request->key_live;
         $obj->url_source = $request->url_source;
-        $obj->note = $request->note;
         $countUrlSource = 0;
         if (strpos($obj->url_source, "openrec.tv") !== false) {
             $tmpSource = explode('\n', $obj->url_source);
@@ -289,13 +292,48 @@ class LiveController extends Controller {
             $itemSource = trim($itemSource);
 
             //2024/02/22 xử lý link nguồn drive.usercontent.google.com
-            if (\App\Common\Utils::containString($itemSource, "drive.usercontent.google.com")) {
+            if (Utils::containString($itemSource, "drive.usercontent.google.com")) {
                 $driveId = Utils::getDriveID($itemSource);
                 $itemSource = "https://drive.google.com/file/d/$driveId/view";
             }
             $tmpSource2[] = $itemSource;
         }
         $obj->url_source = implode("\n", $tmpSource2);
+        if ($isUpdateSource && $obj->status == 2) {
+
+            $size = 0;
+            $sizeGB = 0;
+            $error = "";
+            $metadata = [];
+            if (Utils::containString($obj->url_source, "drive.google.com")) {
+                list($size, $error, $errorArray, $metadata) = $this->checkDriveFile($tmpSource2);
+                $sizeGB = ceil($size / 1024 / 1024 / 1024);
+            }
+            //tốc độ trung bình 30Mbps
+            $estimate = $size / (40 / 8 * 1024 * 1024 );
+            Log::info("user=$user->user_name,id=$obj->id size=$sizeGB GB estimate=$estimate error=$error");
+            if ($error != "") {
+                $obj->log = $error;
+                $obj->save();
+                return array('status' => "error", 'message' => "Link nguồn của bạn có vấn đề, hãy kiểm tra trong log", "live" => $obj);
+            }
+            //2024/07/02 nếu ko check được size thì set mặc định là 3GB
+            if ($sizeGB == 0) {
+                $sizeGB = 5;
+            }
+
+            //kiểm tra xem client hiện tại còn đủ dung lượng không
+            $lientCheck = Zliveclient::where("client_id", $obj->server_id)->first();
+            if ($lientCheck->disk_free < $sizeGB) {
+                return array('status' => "error", 'message' => "Dung lượng file quá lớn, vui lòng thử lại sau", "live" => $obj);
+            }
+            $obj->status = 2;
+            $obj->action_log = $obj->action_log . Utils::timeToStringGmT7(time()) . " $user->user_name update source" . PHP_EOL;
+            $obj->save();
+
+            return array('status' => "success", 'message' => "Video mới của bạn sẽ được Livestream nối tiếp vào video hiện tại!", "live" => $obj);
+        }
+
         $typeSource = 0;
         if (isset($request->type_source)) {
             $typeSource = $request->type_source;
@@ -319,6 +357,10 @@ class LiveController extends Controller {
                 }
             }
         }
+        $obj->status = 0;
+        $obj->url_live = $request->url_live;
+        $obj->key_live = $request->key_live;
+        $obj->note = $request->note;
         $obj->type_source = $typeSource;
         $obj->seq_source = $sequence; //0: lần lượt, 1: random
         $obj->repeat = $repeat; //0: vô cùng, 1: 1ần
@@ -337,7 +379,7 @@ class LiveController extends Controller {
         $obj->start_alarm = $dateStart;
         $obj->end_alarm = $dateEnd;
         $obj->create_time = time();
-        $obj->status = 0;
+
         $obj->user_id = $user->user_code;
         $obj->cus_id = $user->customer_id;
         $obj->is_vip = $customer->is_vip;
@@ -474,7 +516,7 @@ class LiveController extends Controller {
                             $tmp = shell_exec($cmd);
                             $shell = trim($tmp);
                             Log::info("$user->user_name Shell " . $shell);
-                        }  elseif ($live->command == "live_studio_v3") {
+                        } elseif ($live->command == "live_studio_v3") {
                             $cmd = "/home/tiktok_tools/env/bin/python /home/tiktok_tools/tiktok_helper_7_capt.py live_create_studio_v3 $live->tiktok_profile_id";
                             Log::info("$user->user_name $cmd");
                             $tmp = shell_exec($cmd);
@@ -628,9 +670,9 @@ class LiveController extends Controller {
                     $live->action_log = $live->action_log . Utils::timeToStringGmT7(time()) . " $user->user_name change status=3" . PHP_EOL;
                     $live->save();
                     if ($live->platform == 2) {
-                            Log::info("$user->user_name /home/tiktok_tools/env/bin/python /home/tiktok_tools/tiktok_helper_7_capt.py live_finish $live->tiktok_profile_id");
-                            $tmp = shell_exec("/home/tiktok_tools/env/bin/python /home/tiktok_tools/tiktok_helper_7_capt.py live_finish $live->tiktok_profile_id");
-                        }
+                        Log::info("$user->user_name /home/tiktok_tools/env/bin/python /home/tiktok_tools/tiktok_helper_7_capt.py live_finish $live->tiktok_profile_id");
+                        $tmp = shell_exec("/home/tiktok_tools/env/bin/python /home/tiktok_tools/tiktok_helper_7_capt.py live_finish $live->tiktok_profile_id");
+                    }
                     //2023/11/15 kill process khi stop lệnh
                     sleep(3);
                     CommandController::addCommandKillAll($live);
@@ -734,6 +776,29 @@ class LiveController extends Controller {
             return array('status' => "success", 'message' => "Success");
         }
         return array('status' => "error", 'message' => "Thực hiện không thành công");
+    }
+
+    public function updateSource(Request $request) {
+        $user = Auth::user();
+        Log::info($user->user_name . '|LiveController.updateSource|request=' . json_encode($request->all()));
+        $data = Zliveautolive::where("id", $request->id)->where("user_id", $user->user_code)->where("status", 2)->first();
+        if (!$data) {
+            return array('status' => "error", 'message' => "Không tìm thấy thông tin");
+        }
+        $zliveupdate = Zliveupdate::where("zlive_id", $data->id)->first();
+        if ($zliveupdate) {
+            if ($zliveupdate->status == 2 || $zliveupdate->status == 1) {
+                return array('status' => "error", 'message' => "Lệnh live của bạn đang chờ để chuyển, hãy chờ đợi 1 vài phút");
+            }
+        } else {
+            $zliveupdate = new Zliveupdate();
+        }
+
+        $zliveupdate->zlive_id = $data->id;
+        $zliveupdate->url_source = $data->url_source;
+        $zliveupdate->status = 1;
+        $zliveupdate->save();
+        return array('status' => "success", 'message' => "Thực hiện thành công");
     }
 
 }

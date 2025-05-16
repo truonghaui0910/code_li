@@ -496,6 +496,11 @@
                                         data-id="{{$data->id}}" data-toggle="tooltip" data-placement="top"
                                         title="Fix Nodata">Fix Nodata</button>-->
                                 @endif
+                                @if(($isUpdateSource || $isAdmin) && $data->status==2)
+                                    <button class="btn btn-circle btn-dark btn-sm waves-effect waves-light btn-change-source"
+                                        data-id="{{$data->id}}" data-toggle="tooltip" data-placement="top"
+                                        title="Đổi nguồn live"><i class=" ti-exchange-vertical cur-point"></i></button>
+                                @endif
                                 @if($data->is_report==0)
                                 <button class="btn btn-circle btn-dark btn-sm waves-effect waves-light btn-report-bug"
                                         data-id="{{$data->id}}" data-toggle="tooltip" data-placement="top"
@@ -602,6 +607,62 @@
                     console.log(data);
                 }
             });
+        });
+        $(".btn-change-source").click(function (e) {
+            e.preventDefault();
+            var btn = $(this);
+            var id = btn.attr("data-id");
+            var loadingText = '<i class="ion-load-c fa-spin"></i>';
+
+            $.confirm({
+                animation: 'rotateXR',
+                title: 'Confirm!',
+                content: 'Bạn có chắc chắn là đã thay đổi link nguồn?',
+                buttons: {
+                    confirm: {
+                        text: 'Confirm',
+                        btnClass: 'btn-red',
+                        action: function () {
+                            if (btn.html() !== loadingText) {
+                                btn.data('original-text', btn.html());
+                                btn.html(loadingText);
+                            }
+                            $.ajax({
+                                type: "POST",
+                                url: "/updateSource",
+                                data: {
+                                    "id": id,
+                                    "_token": $("input[name=_token]").val()
+                                },
+                                dataType: 'json',
+                                success: function (data) {
+                                    console.log(data);
+                                    btn.html(btn.data('original-text'));
+//                                    if (data.status == 'success') {
+//                                         btn.hide();
+//                                    } 
+                                    $.Notification.autoHideNotify(data.status, 'top center', notifyTitle, data.message);
+                                    if (data.reload == 1) {
+                                        setTimeout(function () {
+                                            location.reload();
+                                        }, 3000);
+                                    }
+                                },
+                                error: function (data) {
+                //                    btn.html($this.data('original-text'));
+                                    console.log(data);
+                                }
+                            });
+                        }
+                    },
+                    cancel: function () {
+
+                    }
+
+                }
+            });            
+
+
         });
         $(".btn-report-bug").click(function (e) {
             e.preventDefault();
@@ -864,6 +925,7 @@ foreach ($datas as $data) {
             dataType: 'json',
             success: function (data) {
 //                console.log(data);
+                $(".btn-save-live").html("Update")
                 btn.html(btn.data('original-text'));
                 if (data.status == 'error') {
                     $.Notification.autoHideNotify(data.status, 'top center', notifyTitle, data.message);

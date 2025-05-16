@@ -535,10 +535,11 @@ class TiktokController extends Controller {
                 $obj->cus_id = $user->customer_id;
                 $obj->is_vip = $customer->is_vip;
                 $obj->conti_live = 0;
-                $obj->is_cheat = 2;
+                $obj->is_cheat = 0;
                 $obj->platform = 2;
                 $obj->action_log = Utils::timeToStringGmT7(time()) . " $user->user_name added in multi-live mode" . PHP_EOL;
                 $obj->infinite_loop = 0; // Không cho phép vô hạn trong chế độ multi_live
+                $obj->is_report = 2; 
                 $obj->save();
 
                 $createdIds[] = $obj->id;
@@ -660,7 +661,7 @@ class TiktokController extends Controller {
             $obj->conti_live = 0;
             $obj->is_cheat = 0;
             $obj->platform = 2;
-            if ($countUrlSource < 2 && $obj->repeat == 0) {
+        if ($countUrlSource < 2 && $obj->repeat == 0) {
                 $obj->is_cheat = 1;
             }
             $obj->action_log = $obj->action_log . Utils::timeToStringGmT7(time()) . " $user->user_name added or edited" . PHP_EOL;
@@ -685,7 +686,7 @@ class TiktokController extends Controller {
         $cmd = "/home/tiktok_tools/env/bin/python /home/tiktok_tools/tiktok_helper_6_capt.py product_list $live->tiktok_profile_id";
         Log::info("$user->user_name cmd:" . $cmd);
         $tmp = shell_exec($cmd);
-        Log::info("$user->user_name tmp:" . $tmp);
+//        Log::info("$user->user_name tmp:" . $tmp);
         $shell = trim($tmp);
         if ($shell == null || $shell == "") {
             return array("status" => "error", "message" => "Không lấy được danh sách sản phẩm");
@@ -719,7 +720,7 @@ class TiktokController extends Controller {
         $results = [];
         foreach ($arrayLink as $data) {
             $link = trim($data);
-            $cmd = "/home/tiktok_tools/env/bin/python /home/tiktok_tools/tiktok_helper_6_capt.py product_add  $live->tiktok_profile_id $live->room_id \"$link\"";
+            $cmd = "/home/tiktok_tools/env/bin/python /home/v21.autolive.vip/public_html/python.py product_add  $live->tiktok_profile_id $live->room_id \"$link\"";
             Log::info("$user->user_name|tiktokProductAdd|cmd:" . $cmd);
             $tmp = shell_exec($cmd);
             Log::info("$user->user_name|tiktokProductAdd|tmp:" . $tmp);
@@ -730,6 +731,16 @@ class TiktokController extends Controller {
                     return array("status" => "error", "message" => "Tài khoản của bạn cần kích hoạt Tiktok Shop! Xin Cảm Ơn", "result" => $results);
                 }
                 $pro = json_decode($shell);
+
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    // Thử chuyển ' thành " một cách an toàn
+                    $fixedShell = preg_replace_callback("/'([^']*)'/", function ($matches) {
+                        return '"' . addslashes($matches[1]) . '"';
+                    }, $shell);
+
+                    $pro = json_decode($fixedShell);
+                }
+                Log::info(json_encode($pro));
                 if ($pro->code == 0 && $pro->message == 'success') {
                     $count++;
                     $status = "success";

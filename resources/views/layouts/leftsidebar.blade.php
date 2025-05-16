@@ -61,6 +61,7 @@
                 <li>
                     <a href="/customer" class="waves-effect waves-primary"><i class="ti-user"></i><span>Customer</span></a>
                 </li>
+                @endif
                 @if($isAdmin || $isTax)
                 <li>
                     <a href="/vatInvoice" class="waves-effect waves-primary"><i class=" fa fa-tags"></i><span>Tax Invoice</span>
@@ -70,6 +71,7 @@
                     </a>
                 </li>
                 @endif
+                @if($isAdmin)
                 <li>
                     <a href="/invoice" class="waves-effect waves-primary"><i class="ti-credit-card"></i><span>Invoice</span></a>
                 </li>

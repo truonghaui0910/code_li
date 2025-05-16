@@ -96,9 +96,9 @@ Route::group(['middleware' => 'localization', 'prefix' => Session::get('locale')
         Route::get('/tiktok/check-product-batch-progress', 'ProductController@checkProductBatchProgress');
         // Routes cho cấu hình pin sản phẩm
         Route::post('/tiktok/save-pin-config', 'ProductController@savePinConfig');
+        Route::get('/tiktok/get-pin-config/', 'ProductController@getPinConfig');
 
-        // Route cho cron job tự động pin sản phẩm
-        Route::get('/tiktok/auto-pin-product-v2', 'ProductController@autoPinProductV2');        
+     
         
         Route::group(['middleware' => 'expired'], function() {
             Route::get('/requestTest', 'LiveController@requestTest')->name('requestTest');
@@ -114,6 +114,7 @@ Route::group(['middleware' => 'localization', 'prefix' => Session::get('locale')
             Route::post('/bug', 'LiveController@reportBug')->name('reportBug');
             Route::post('/kill/lid', 'CommandController@addCommandKillLid')->name('addCommandKillLid');
             Route::post('/quick/restart', 'LiveController@quickRestart')->name('quickRestart');
+            Route::post('/updateSource', 'LiveController@updateSource')->name('updateSource');
         });
         Route::group(['middleware' => 'supperAdminCheck'], function() {
             Route::post('/postBonus', 'UserController@postBonus')->name('postBonus');
@@ -239,6 +240,11 @@ Route::group(['middleware' => 'localization', 'prefix' => Session::get('locale')
     
     Route::get('/scanSalarm', 'ApiController@scanStartAlarmRecords');
     Route::get('/scanEalarm', 'ApiController@scanEndAlarmRecords');
+    // Routes cho chức năng tự động thêm sản phẩm vào luồng live
+    Route::get('/autoUpdateLiveStartedTime', 'ApiController@updateLiveStartedTime')->name('updateLiveStartedTime');
+    Route::get('/autoAddProductsToLive', 'ApiController@autoAddProductsToLive')->name('autoAddProductsToLive');
+    // Route cho cron job tự động pin sản phẩm
+    Route::get('/autoProductPinning', 'ApiController@autoProductPinning')->name('autoProductPinning');   
     
 });
 
