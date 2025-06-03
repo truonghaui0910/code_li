@@ -351,7 +351,7 @@ class ProductController extends Controller {
      */
     private function processProductLink($link, $profileId, $user) {
         // Sử dụng câu lệnh để kiểm tra sản phẩm
-        $cmd = config('config.python_path')." product_check $profileId \"$link\"";
+        $cmd = config('config.python_path') . " product_check $profileId \"$link\"";
 
         Log::info("$user->user_name|processProductLink|cmd:" . $cmd);
         $tmp = shell_exec($cmd);
@@ -557,79 +557,122 @@ class ProductController extends Controller {
 //    $profile->save();
 //    
 //    return array("status" => "success", "message" => "Đã lưu cấu hình pin sản phẩm thành công");
-//}
+//}    
 
-public function savePinConfig(Request $request) {
-    $user = Auth::user();
-    Log::info("$user->user_name|ProductController.savePinConfig|request=" . json_encode($request->all()));
-    
-    // Lấy thông tin profile
-    $profileId = $request->profile_id;
-    
-    if (!$profileId) {
-        return array("status" => "error", "message" => "Thiếu thông tin profile ID");
-    }
-    
-    $profile = TiktokProfile::where('id', $profileId)
-            ->where('username', $user->user_name)
-            ->first();
-    
-    if (!$profile) {
-        return array("status" => "error", "message" => "Không tìm thấy thông tin profile TikTok");
-    }
-    
-    // Lấy cấu hình pin từ request
-    $productSetId = $request->product_set_id;
-    $isAutoPin = $request->is_autopin ? true : false;
-    
-    if (!$productSetId) {
-        return array("status" => "error", "message" => "Thiếu thông tin bộ sản phẩm");
-    }
-    
-    // Tạo cấu hình pin
-    $pinConfig = [
-        'product_set_id' => $productSetId,
-        'is_autopin' => $isAutoPin,
-        'updated_at' => time()
-    ];
-    
-    // Nếu bật tự động pin, lưu thêm thông tin cấu hình
-    if ($isAutoPin) {
-        $pinType = $request->pin_type; // 'interval' hoặc 'specific'
-        $pinConfig['pin_type'] = $pinType;
-        
-        if ($pinType == 'interval') {
-            // Kiểu 1: Khoảng thời gian
-            $interval = intval($request->interval);
-            
-            if ($interval < 60) {  // Tối thiểu 1 phút = 60 giây
-                return array("status" => "error", "message" => "Khoảng thời gian pin phải lớn hơn hoặc bằng 1 phút");
-            }
-            
-            $pinConfig['interval'] = $interval;
-        } else {
-            // Kiểu 2: Thời điểm cụ thể
-            $products = json_decode($request->products, true);
-            
-            if (empty($products)) {
-                return array("status" => "error", "message" => "Thiếu thông tin thời gian pin cho sản phẩm");
-            }
-            
-            // Sắp xếp sản phẩm theo thời gian pin
-            usort($products, function($a, $b) {
-                return $a['pin_time'] - $b['pin_time'];
-            });
-            
-            $pinConfig['products'] = $products;
+
+    public function savePinConfig(Request $request) {
+        $user = Auth::user();
+        Log::info("$user->user_name|ProductController.savePinConfig|request=" . json_encode($request->all()));
+
+        // Lấy thông tin profile
+        $profileId = $request->profile_id;
+
+        if (!$profileId) {
+            return array("status" => "error", "message" => "Thiếu thông tin profile ID");
         }
+
+        $profile = TiktokProfile::where('id', $profileId)
+                ->where('username', $user->user_name)
+                ->first();
+
+        if (!$profile) {
+            return array("status" => "error", "message" => "Không tìm thấy thông tin profile TikTok");
+        }
+
+        // Lấy cấu hình pin từ request
+        $productSetId = $request->product_set_id;
+        $isAutoPin = $request->is_autopin ? true : false;
+
+        if (!$productSetId) {
+            return array("status" => "error", "message" => "Thiếu thông tin bộ sản phẩm");
+        }
+
+        // Tạo cấu hình pin
+        $pinConfig = [
+            'product_set_id' => $productSetId,
+            'is_autopin' => $isAutoPin,
+            'updated_at' => time()
+        ];
+
+        // Nếu bật tự động pin, lưu thêm thông tin cấu hình
+        if ($isAutoPin) {
+            $pinType = $request->pin_type; // 'interval' hoặc 'specific'
+            $pinConfig['pin_type'] = $pinType;
+
+            if ($pinType == 'interval') {
+                // Kiểu 1: Khoảng thời gian
+                $interval = intval($request->interval);
+
+                if ($interval < 60) {  // Tối thiểu 1 phút = 60 giây
+                    return array("status" => "error", "message" => "Khoảng thời gian pin phải lớn hơn hoặc bằng 1 phút");
+                }
+
+                $pinConfig['interval'] = $interval;
+            } else {
+                // Kiểu 2: Thời điểm cụ thể
+                $products = json_decode($request->products, true);
+
+                if (empty($products)) {
+                    return array("status" => "error", "message" => "Thiếu thông tin thời gian pin cho sản phẩm");
+                }
+
+                // Validate và xử lý flash sale cho từng sản phẩm
+                foreach ($products as &$product) {
+                    if (isset($product['flash_sale'])) {
+                        $flashSale = $product['flash_sale'];
+
+                        // Validate giá flash sale
+                        if (isset($flashSale['price'])) {
+                            $salePrice = floatval($flashSale['price']);
+//                            $originalPrice = floatval($product['original_price']);
+
+//                            if ($salePrice >= $originalPrice) {
+//                                return array(
+//                                    "status" => "error",
+//                                    "message" => "Giá Flash Sale phải thấp hơn giá gốc của sản phẩm"
+//                                );
+//                            }
+                        }
+
+                        // Validate thời gian flash sale
+                        if (isset($flashSale['duration'])) {
+                            $duration = intval($flashSale['duration']);
+
+                            if ($duration < 1) {
+                                return array(
+                                    "status" => "error",
+                                    "message" => "Thời gian Flash Sale phải từ 1 phút trở lên"
+                                );
+                            }
+                        }
+
+                        // Thêm thông tin timestamp và trạng thái
+                        $product['flash_sale'] = array_merge($flashSale, [
+                            'created_at' => time(),
+                            'status' => 'pending'
+                        ]);
+                    }
+                }
+
+                // Sắp xếp sản phẩm theo thời gian pin
+                usort($products, function($a, $b) {
+                    return $a['pin_time'] - $b['pin_time'];
+                });
+
+                $pinConfig['products'] = $products;
+            }
+        }
+
+        // Log thông tin cấu hình trước khi lưu
+        Log::info("$user->user_name|savePinConfig|pinConfig=" . json_encode($pinConfig));
+
+        // Lưu cấu hình vào profile
+        $profile->product_pin_config = json_encode($pinConfig);
+        $profile->save();
+
+        return array("status" => "success", "message" => "Đã lưu cấu hình pin sản phẩm thành công");
     }
-    
-    // Lưu cấu hình vào profile
-    $profile->product_pin_config = json_encode($pinConfig);
-    $profile->save();
-    
-    return array("status" => "success", "message" => "Đã lưu cấu hình pin sản phẩm thành công");
-}    
+
     /**
      * Lấy cấu hình pin sản phẩm
      */

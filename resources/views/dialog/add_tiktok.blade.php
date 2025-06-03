@@ -26,7 +26,7 @@
                 <div class="div_add_web">
 
                 </div>
-                <div class="pa-10 modal-body ">
+                <div class="pa-10 modal-body div_scroll_80">
                     <div class="content-tiktok">
                         <div class="row">
                             <div class="col-md-12">
@@ -299,6 +299,7 @@
 
                                                 data-id="{{ $data->id }}" data-toggle="tooltip"
                                                 data-placement="top" title="Cấu hình ghim sản phẩm">Ghim</button>
+                                            @endif
                                             @if($data->custom_proxy == null)
                                             <button id="ip-{{ $data->id }}"
                                                     class="btn btn-dark btn-sm waves-effect waves-light "
@@ -324,7 +325,7 @@
                                             <!--                                            <button id="renew-{{ $data->id }}" class="btn btn-circle btn-dark btn-sm waves-effect waves-light" onclick="renewDevice({{ $data->id }})"
                                                                                     data-id="{{ $data->id }}" data-toggle="tooltip" data-placement="top"
                                                                                     title="Đổi thiết bị"><i class="fa fa-refresh cur-point"></i></button>-->
-                                            @endif
+                                            
                                             <button id="tik-{{ $data->id }}"
                                                     class="btn btn-circle btn-dark btn-sm waves-effect waves-light"
                                                     onclick="deleteTiktok({{ $data->id }})"

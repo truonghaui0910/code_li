@@ -6,6 +6,7 @@ use App\Common\Network\RequestHelper;
 use App\Common\Utils;
 use App\Events\Notify;
 use App\Http\Models\Invoice;
+use App\Http\Models\InvoiceVat;
 use App\Http\Models\Package;
 use App\Http\Models\Zlivecustomer;
 use App\User;
@@ -773,7 +774,11 @@ class InvoiceController extends Controller {
 
             //thêm dữ liệu sang invoice_vat để xử lý hóa đơn vat
             if ($invoice->bank == 'moonshots') {
-                $invoiceVat = new \App\Http\Models\InvoiceVat();
+                $invoiceVat = InvoiceVat::find($invoice->id);
+                if (!$invoiceVat) {
+                    $invoiceVat = new InvoiceVat();
+                }
+                $invoiceVat->del_status = 0;
                 $invoiceVat->id = $invoice->id;
                 $invoiceVat->invoice_id = $invoice->invoice_id;
                 $invoiceVat->user_name = $invoice->user_name;
@@ -786,6 +791,7 @@ class InvoiceController extends Controller {
                 $invoiceVat->payment_money = $invoice->payment_money;
                 $invoiceVat->user_approve = $invoice->user_approve;
                 $invoiceVat->save();
+                $this->createMinvoiceVATInvoice($invoice, $package, $customer);
             }
         } else {
 
@@ -810,9 +816,543 @@ class InvoiceController extends Controller {
                 $zlivecustomer->save();
             }
             //xóa invoice vat
-            \App\Http\Models\InvoiceVat::where("id", $invoice->id)->update(["del_status" => 1, "log" => Utils::timeToStringGmT7(time()) . " $userProcess rollback"]);
+//            InvoiceVat::where("id", $invoice->id)->update(["del_status" => 1, "log" => Utils::timeToStringGmT7(time()) . " $userProcess rollback"]);
+            $invoiceVatRecord = InvoiceVat::where("id", $invoice->id)->first();
+            if ($invoiceVatRecord) {
+                // Nếu có vat_id thì gọi API xóa trên minvoice
+                if (!empty($invoiceVatRecord->vat_id) && empty($invoiceVatRecord->vat_code)) {
+//                    $this->deleteMinvoiceVATInvoice($invoiceVatRecord->vat_id);
+                }
+                $invoiceVatRecord->vat_id = null;
+                $invoiceVatRecord->del_status = 1;
+                $invoiceVatRecord->log = $invoiceVatRecord->log . PHP_EOL . Utils::timeToStringGmT7(time()) . " $userProcess rollback";
+                $invoiceVatRecord->save();
+            }
         }
         return array('status' => "success", 'message' => "Success");
+    }
+
+    public function createMinvoiceVATInvoice($invoice, $package, $customer) {
+        try {
+            // Kiểm tra điều kiện áp dụng, có vat_invoice_info thì sẽ tạo bằng tay
+            if ($customer->is_company != 0 ||
+                    $invoice->bank != 'moonshots' ||
+                    $invoice->vat_invoice_info != null) {
+                Log::info("createMinvoiceVATInvoice: Không đáp ứng điều kiện tạo hóa đơn VAT cho invoice #{$invoice->id}");
+                return;
+            }
+
+            // Xác định loại gói và thông tin tương ứng
+            $isCustomOrVip = in_array($invoice->package_code, ['LIVECUSTOM', 'LIVEVIP', 'TIKTOKVIP', 'TIKTOKCUSTOM', 'SHOPEEVIP']);
+
+            // Tính toán các giá trị cho request
+            $quantity = $isCustomOrVip ? 1 : $invoice->month;
+            $unitCode = $isCustomOrVip ? 'Gói' : 'Tháng';
+            $unitPrice = $isCustomOrVip ? $invoice->payment_money : $package->price;
+            $discountAmount = $isCustomOrVip ? 0 : ($package->{"discount_" . $invoice->month} ?? 0);
+
+            // Tính toán tổng tiền
+            $totalAmountWithoutVat = $invoice->payment_money;
+            $totalAmount = $invoice->payment_money;
+
+            // Tên sản phẩm
+            $itemName = ($package->package_name_vat) . ' ' . $invoice->invoice_id;
+
+            // Chuẩn bị dữ liệu request
+            $requestData = array(
+                "editmode" => 1,
+                "data" => array(
+                    array(
+                        "inv_invoiceSeries" => "1C25MCN",
+                        "inv_currencyCode" => "VND",
+                        "inv_exchangeRate" => 1,
+                        "inv_buyerDisplayName" => $invoice->user_name,
+                        "inv_buyerAddressLine" => "Hà Nội",
+                        "inv_paymentMethodName" => "TM/CK",
+                        "inv_discountAmount" => $discountAmount,
+                        "inv_TotalAmountWithoutVat" => $totalAmountWithoutVat,
+                        "inv_vatAmount" => 0,
+                        "inv_TotalAmount" => $totalAmount,
+                        "key_api" => $invoice->invoice_id,
+                        "details" => array(
+                            array(
+                                "data" => array(
+                                    array(
+                                        "tchat" => 1,
+                                        "stt_rec0" => 1,
+                                        "inv_itemCode" => $invoice->package_code,
+                                        "inv_itemName" => $itemName,
+                                        "inv_unitCode" => $unitCode,
+                                        "inv_quantity" => $quantity,
+                                        "inv_unitPrice" => $unitPrice,
+                                        "inv_discountAmount" => $discountAmount,
+                                        "inv_TotalAmountWithoutVat" => $totalAmountWithoutVat,
+                                        "ma_thue" => -1,
+                                        "inv_vatAmount" => 0,
+                                        "inv_TotalAmount" => $totalAmount
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+            );
+
+            // Khởi tạo cURL
+            $curl = curl_init();
+            curl_setopt_array($curl, array(
+                CURLOPT_URL => 'https://0110117378.minvoice.app/api/InvoiceApi78/Save',
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_ENCODING => '',
+                CURLOPT_MAXREDIRS => 10,
+                CURLOPT_TIMEOUT => 30,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+                CURLOPT_CUSTOMREQUEST => 'POST',
+                CURLOPT_POSTFIELDS => json_encode($requestData),
+                CURLOPT_HTTPHEADER => array(
+                    'Content-Type: application/json',
+                    'Authorization: Bearer 72a637e6-abc6-4557-9c16-ff324ea2c814'
+                ),
+            ));
+
+            $response = curl_exec($curl);
+            $httpCode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+            $curlError = curl_error($curl);
+            curl_close($curl);
+
+            // Kiểm tra lỗi cURL
+            if ($curlError) {
+                Log::error("createMinvoiceVATInvoice: cURL Error - " . $curlError);
+                return;
+            }
+
+            // Kiểm tra HTTP status
+            if ($httpCode != 200) {
+                Log::error("createMinvoiceVATInvoice: HTTP Error - Code: " . $httpCode);
+                return;
+            }
+
+            // Parse response
+            $responseData = json_decode($response, true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                Log::error("createMinvoiceVATInvoice: JSON Parse Error - " . json_last_error_msg());
+                return;
+            }
+
+            // Kiểm tra response thành công
+            if (!isset($responseData['ok']) || $responseData['ok'] !== true) {
+                $errorMsg = $responseData['message'] ?? 'Không xác định';
+                Log::error("createMinvoiceVATInvoice: API Error - " . $errorMsg);
+                return;
+            }
+
+            // Lấy ID từ response
+            $vatId = $responseData['data']['id'] ?? null;
+            if (!$vatId) {
+                Log::error("createMinvoiceVATInvoice: Không tìm thấy ID trong response");
+                return;
+            }
+
+            // Cập nhật vat_id vào bảng invoice_vat
+            $invoiceVat = InvoiceVat::where('id', $invoice->id)->first();
+            if ($invoiceVat) {
+                $invoiceVat->vat_id = $vatId;
+                $invoiceVat->minvoice_response = json_encode($responseData);
+                $invoiceVat->save();
+
+                Log::info("createMinvoiceVATInvoice: Đã cập nhật vat_id = {$vatId} cho invoice_vat #{$invoice->id}");
+            } else {
+                Log::warning("createMinvoiceVATInvoice: Không tìm thấy record invoice_vat với id = {$invoice->id}");
+            }
+        } catch (Exception $e) {
+            Log::error("createMinvoiceVATInvoice: Exception - " . $e->getMessage());
+        }
+    }
+
+    public function deleteMinvoiceVATInvoice($vatId) {
+        try {
+            // Kiểm tra vatId có tồn tại không
+            if (empty($vatId)) {
+                Log::info("deleteMinvoiceVATInvoice: Không có vatId để xóa");
+                return;
+            }
+
+            // Chuẩn bị dữ liệu request cho việc xóa
+            $requestData = array(
+                "editmode" => 3, // 3 = delete mode
+                "data" => array(
+                    array(
+                        "inv_invoiceSeries" => "1C25MCN",
+                        "inv_invoiceAuth_Id" => $vatId
+                    )
+                )
+            );
+
+            // Khởi tạo cURL
+            $curl = curl_init();
+            curl_setopt_array($curl, array(
+                CURLOPT_URL => 'https://0110117378.minvoice.app/api/InvoiceApi78/Save',
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_ENCODING => '',
+                CURLOPT_MAXREDIRS => 10,
+                CURLOPT_TIMEOUT => 30,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+                CURLOPT_CUSTOMREQUEST => 'POST',
+                CURLOPT_POSTFIELDS => json_encode($requestData),
+                CURLOPT_HTTPHEADER => array(
+                    'Content-Type: application/json',
+                    'Authorization: Bearer 72a637e6-abc6-4557-9c16-ff324ea2c814'
+                ),
+            ));
+
+            $response = curl_exec($curl);
+            $httpCode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+            $curlError = curl_error($curl);
+            curl_close($curl);
+
+            // Kiểm tra lỗi cURL
+            if ($curlError) {
+                Log::error("deleteMinvoiceVATInvoice: cURL Error - " . $curlError);
+                return;
+            }
+
+            // Kiểm tra HTTP status
+            if ($httpCode != 200) {
+                Log::error("deleteMinvoiceVATInvoice: HTTP Error - Code: " . $httpCode);
+                return;
+            }
+
+            // Parse response
+            $responseData = json_decode($response, true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                Log::error("deleteMinvoiceVATInvoice: JSON Parse Error - " . json_last_error_msg());
+                return;
+            }
+
+            // Kiểm tra response thành công
+            if (!isset($responseData['ok']) || $responseData['ok'] !== true) {
+                $errorMsg = $responseData['message'] ?? 'Không xác định';
+                Log::error("deleteMinvoiceVATInvoice: API Error - " . $errorMsg);
+                return;
+            }
+
+            Log::info("deleteMinvoiceVATInvoice: Xóa hóa đơn VAT thành công với ID = {$vatId}");
+        } catch (Exception $e) {
+            Log::error("deleteMinvoiceVATInvoice: Exception - " . $e->getMessage());
+        }
+    }
+
+    public function downloadVATInvoice($invoiceId) {
+        $user = Auth::user();
+        Log::info("$user->user_name|InvoiceController|downloadVATInvoice=$invoiceId");
+
+        try {
+            // Tìm hóa đơn
+            $invoice = Invoice::where('id', $invoiceId)->first();
+            if (!$invoice) {
+                return response()->json(['error' => 'Không tìm thấy hóa đơn'], 404);
+            }
+
+            // Kiểm tra quyền (chỉ admin hoặc chủ hóa đơn)
+            if (!in_array(1, explode(",", $user->role)) && $invoice->user_name != $user->user_name) {
+                return response()->json(['error' => 'Không có quyền truy cập'], 403);
+            }
+
+            // Lấy thông tin VAT
+            $invoiceVat = \App\Http\Models\InvoiceVat::where('id', $invoice->id)->first();
+            if (!$invoiceVat || !$invoiceVat->vat_id) {
+                return response()->json(['error' => 'Hóa đơn VAT không tồn tại'], 404);
+            }
+
+            // Tạo tên file
+            $fileName = "hoadon_vat_{$invoice->invoice_id}.pdf";
+
+            // Download PDF
+            return $this->downloadMinvoiceVATInvoice($invoiceVat->vat_id, $fileName);
+        } catch (Exception $e) {
+            Log::error("downloadVATInvoice: Error - " . $e->getMessage());
+            return response()->json(['error' => 'Lỗi hệ thống'], 500);
+        }
+    }
+
+    public function previewVATInvoice($invoiceId) {
+        $user = Auth::user();
+        Log::info("$user->user_name|InvoiceController|previewVATInvoice=$invoiceId");
+
+        try {
+            // Tìm hóa đơn
+            $invoice = Invoice::where('id', $invoiceId)->first();
+            if (!$invoice) {
+                return response()->json(['error' => 'Không tìm thấy hóa đơn'], 404);
+            }
+
+            // Kiểm tra quyền
+            if (!in_array(1, explode(",", $user->role)) && $invoice->user_name != $user->user_name) {
+                return response()->json(['error' => 'Không có quyền truy cập'], 403);
+            }
+
+            // Lấy thông tin VAT
+            $invoiceVat = \App\Http\Models\InvoiceVat::where('id', $invoice->id)->first();
+            if (!$invoiceVat || !$invoiceVat->vat_id) {
+                return response()->json(['error' => 'Hóa đơn VAT không tồn tại'], 404);
+            }
+
+            // Preview PDF
+            return $this->previewMinvoiceVATInvoice($invoiceVat->vat_id);
+        } catch (Exception $e) {
+            Log::error("previewVATInvoice: Error - " . $e->getMessage());
+            return response()->json(['error' => 'Lỗi hệ thống'], 500);
+        }
+    }
+
+    private function viewMinvoiceVATInvoice($vatId) {
+        try {
+            // Kiểm tra vatId có tồn tại không
+            if (empty($vatId)) {
+                Log::error("viewMinvoiceVATInvoice: Không có vatId để xem");
+                return null;
+            }
+
+            Log::info("viewMinvoiceVATInvoice: Bắt đầu lấy PDF hóa đơn VAT với ID = {$vatId}");
+
+            // Khởi tạo cURL
+            $curl = curl_init();
+            curl_setopt_array($curl, array(
+                CURLOPT_URL => "https://0110117378.minvoice.app/api/InvoiceApi78/PrintInvoice?id={$vatId}",
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_ENCODING => '',
+                CURLOPT_MAXREDIRS => 10,
+                CURLOPT_TIMEOUT => 30,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+                CURLOPT_CUSTOMREQUEST => 'GET',
+                CURLOPT_HTTPHEADER => array(
+                    'Authorization: Bearer 72a637e6-abc6-4557-9c16-ff324ea2c814',
+                    'TaxCode: 0110117378'
+                ),
+            ));
+
+            $response = curl_exec($curl);
+            $httpCode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+            $contentType = curl_getinfo($curl, CURLINFO_CONTENT_TYPE);
+            $curlError = curl_error($curl);
+            curl_close($curl);
+
+            Log::info("viewMinvoiceVATInvoice: HTTP Code = " . $httpCode);
+            Log::info("viewMinvoiceVATInvoice: Content Type = " . $contentType);
+
+            // Kiểm tra lỗi cURL
+            if ($curlError) {
+                Log::error("viewMinvoiceVATInvoice: cURL Error - " . $curlError);
+                return null;
+            }
+
+            // Kiểm tra HTTP status
+            if ($httpCode != 200) {
+                Log::error("viewMinvoiceVATInvoice: HTTP Error - Code: " . $httpCode);
+                Log::error("viewMinvoiceVATInvoice: Response: " . substr($response, 0, 500));
+                return null;
+            }
+
+            // Kiểm tra content type
+            if (strpos($contentType, 'application/pdf') === false) {
+                // Nếu không phải PDF, có thể là JSON error response
+                $responseData = json_decode($response, true);
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    Log::error("viewMinvoiceVATInvoice: API Error Response - " . json_encode($responseData));
+                } else {
+                    Log::error("viewMinvoiceVATInvoice: Unexpected content type - " . $contentType);
+                    Log::error("viewMinvoiceVATInvoice: Response: " . substr($response, 0, 500));
+                }
+                return null;
+            }
+
+            Log::info("viewMinvoiceVATInvoice: Lấy PDF thành công với ID = {$vatId}");
+
+            return array(
+                'pdf_data' => $response,
+                'content_type' => $contentType,
+                'file_size' => strlen($response)
+            );
+        } catch (Exception $e) {
+            Log::error("viewMinvoiceVATInvoice: Exception - " . $e->getMessage());
+            return null;
+        }
+    }
+
+    private function downloadMinvoiceVATInvoice($vatId, $fileName = null) {
+        $pdfData = $this->viewMinvoiceVATInvoice($vatId);
+
+        if (!$pdfData) {
+            return response()->json(['error' => 'Không thể lấy hóa đơn VAT'], 404);
+        }
+
+        // Tạo tên file nếu không được cung cấp
+        if (!$fileName) {
+            $fileName = "invoice_vat_{$vatId}.pdf";
+        }
+
+        return response($pdfData['pdf_data'], 200)
+                        ->header('Content-Type', 'application/pdf')
+                        ->header('Content-Disposition', 'attachment; filename="' . $fileName . '"')
+                        ->header('Content-Length', $pdfData['file_size']);
+    }
+
+    private function previewMinvoiceVATInvoice($vatId) {
+        $pdfData = $this->viewMinvoiceVATInvoice($vatId);
+
+        if (!$pdfData) {
+            return response()->json(['error' => 'Không thể lấy hóa đơn VAT'], 404);
+        }
+
+        return response($pdfData['pdf_data'], 200)
+                        ->header('Content-Type', 'application/pdf')
+                        ->header('Content-Disposition', 'inline')
+                        ->header('Content-Length', $pdfData['file_size']);
+    }
+
+    public function getMinvoiceInvoices($start = 0, $count = 100) {
+        try {
+
+            // Tính toán ngày
+            $currentDate = date('Y-m-d'); // Ngày hiện tại
+            $fromDate = date('Y-m-d', strtotime('-3 days')); // 3 ngày trước
+            // Chuẩn bị dữ liệu request
+            $requestData = array(
+                "tuNgay" => $fromDate,
+                "denngay" => $currentDate,
+                "khieu" => "1C25MCN",
+                "start" => $start,
+                "count" => $count,
+                "coChiTiet" => true
+            );
+
+            // Khởi tạo cURL
+            $curl = curl_init();
+            curl_setopt_array($curl, array(
+                CURLOPT_URL => 'https://0110117378.minvoice.app/api/InvoiceApi78/GetInvoices',
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_ENCODING => '',
+                CURLOPT_MAXREDIRS => 10,
+                CURLOPT_TIMEOUT => 30,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+                CURLOPT_CUSTOMREQUEST => 'POST',
+                CURLOPT_POSTFIELDS => json_encode($requestData),
+                CURLOPT_HTTPHEADER => array(
+                    'Content-Type: application/json',
+                    'Authorization: Bearer 72a637e6-abc6-4557-9c16-ff324ea2c814'
+                ),
+            ));
+
+            $response = curl_exec($curl);
+            $httpCode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+            $curlError = curl_error($curl);
+            curl_close($curl);
+
+            Log::info("getMinvoiceInvoices: Request data = " . json_encode($requestData));
+            Log::info("getMinvoiceInvoices: HTTP Code = " . $httpCode);
+
+            // Kiểm tra lỗi cURL
+            if ($curlError) {
+                Log::error("getMinvoiceInvoices: cURL Error - " . $curlError);
+                return null;
+            }
+
+            // Kiểm tra HTTP status
+            if ($httpCode != 200) {
+                Log::error("getMinvoiceInvoices: HTTP Error - Code: " . $httpCode);
+                Log::error("getMinvoiceInvoices: Response: " . substr($response, 0, 500));
+                return null;
+            }
+
+            // Parse response
+            $responseData = json_decode($response, true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                Log::error("getMinvoiceInvoices: JSON Parse Error - " . json_last_error_msg());
+                return null;
+            }
+
+            // Kiểm tra response thành công
+            if (!isset($responseData['ok']) || $responseData['ok'] !== true) {
+                $errorMsg = $responseData['message'] ?? 'Không xác định';
+                Log::error("getMinvoiceInvoices: API Error - " . $errorMsg);
+                return null;
+            }
+
+            $total = $responseData['total'] ?? 0;
+            $invoices = $responseData['data'] ?? [];
+
+            Log::info("getMinvoiceInvoices: Lấy thành công {$total} hóa đơn từ ngày {$fromDate} đến {$currentDate}");
+
+            return array(
+                'total' => $total,
+                'invoices' => $invoices,
+                'from_date' => $fromDate,
+                'to_date' => $currentDate,
+                'start' => $start,
+                'count' => count($invoices)
+            );
+        } catch (Exception $e) {
+            Log::error("getMinvoiceInvoices: Exception - " . $e->getMessage());
+            return null;
+        }
+    }
+
+    public function syncMinvoiceData() {
+        try {
+            Log::info("syncMinvoiceData: Bắt đầu đồng bộ mã bảo mật từ minvoice");
+
+            $invoicesData = $this->getMinvoiceInvoices(0, 100);
+            if (!$invoicesData) {
+                Log::error("syncMinvoiceData: Không thể lấy danh sách hóa đơn từ minvoice");
+                return array('status' => 'error', 'message' => 'Không thể lấy dữ liệu từ minvoice');
+            }
+
+            $updated = 0;
+            $notFound = 0;
+            $skipped = 0;
+
+            foreach ($invoicesData['invoices'] as $minvoiceInvoice) {
+                // Kiểm tra sobaomat có tồn tại và không null
+                if (empty($minvoiceInvoice['sobaomat'])) {
+                    $skipped++;
+                    Log::info("syncMinvoiceData: Bỏ qua hóa đơn {$minvoiceInvoice['id']} - không có mã bảo mật");
+                    continue;
+                }
+
+                // Tìm invoice_vat trong database theo vat_id
+                $invoiceVat = \App\Http\Models\InvoiceVat::where('vat_id', $minvoiceInvoice['id'])->whereNull("vat_code")->first();
+
+                if ($invoiceVat) {
+                    // Cập nhật vat_code = sobaomat
+                    $invoiceVat->vat_code = $minvoiceInvoice['sobaomat'];
+                    $invoiceVat->save();
+
+                    $updated++;
+                    Log::info("syncMinvoiceData: Cập nhật vat_code = {$minvoiceInvoice['sobaomat']} cho invoice_vat #{$invoiceVat->id}");
+                } else {
+                    $notFound++;
+                    Log::warning("syncMinvoiceData: Không tìm thấy invoice_vat với vat_id = {$minvoiceInvoice['id']}");
+                }
+            }
+
+            Log::info("syncMinvoiceData: Hoàn thành đồng bộ. Updated: {$updated}, Not found: {$notFound}, Skipped: {$skipped}");
+
+            return array(
+                'status' => 'success',
+                'message' => "Đồng bộ thành công. Cập nhật: {$updated}, Không tìm thấy: {$notFound}, Bỏ qua: {$skipped}",
+                'updated' => $updated,
+                'not_found' => $notFound,
+                'skipped' => $skipped,
+                'total_minvoice' => $invoicesData['total']
+            );
+        } catch (Exception $e) {
+            Log::error("syncMinvoiceData: Exception - " . $e->getMessage());
+            return array('status' => 'error', 'message' => 'Lỗi hệ thống: ' . $e->getMessage());
+        }
     }
 
 }

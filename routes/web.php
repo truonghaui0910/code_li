@@ -82,7 +82,7 @@ Route::group(['middleware' => 'localization', 'prefix' => Session::get('locale')
         Route::get('/invoice/{package}', 'InvoiceController@getInvoice')->name('getInvoice');
         Route::post('/postInvoice', 'InvoiceController@postInvoice')->name('postInvoice');
         Route::get('/action/invoice', 'InvoiceController@actionInvoice')->name('actionInvoice');
-        
+
         Route::post('addOrEditUser', 'UserController@addOrEditUser')->name('addOrEditUser');
         Route::put('/live', 'LiveController@update')->name('update');
         Route::post('/useBonus', 'UserController@useBonus')->name('useBonus');
@@ -98,11 +98,11 @@ Route::group(['middleware' => 'localization', 'prefix' => Session::get('locale')
         Route::post('/tiktok/save-pin-config', 'ProductController@savePinConfig');
         Route::get('/tiktok/get-pin-config/', 'ProductController@getPinConfig');
 
-     
-        
+
+
         Route::group(['middleware' => 'expired'], function() {
             Route::get('/requestTest', 'LiveController@requestTest')->name('requestTest');
-            
+
             Route::post('/profile/calulate/live', 'ProfileController@caculateLive')->name('caculateLive');
             Route::get('/requestVip', 'ProfileController@requestVip')->name('requestVip');
             Route::get('/live', 'LiveController@index')->name('live');
@@ -139,7 +139,7 @@ Route::group(['middleware' => 'localization', 'prefix' => Session::get('locale')
             Route::get('/listv3', 'TiktokController@listv3')->name('listv3');
         });
         Route::group(['middleware' => 'tiktokExpired'], function() {
-           
+
             Route::post('/tiktok/v3/req', 'TiktokController@requestV3')->name('requestV3');
             Route::post('/tiktok/cookie/add', 'TiktokController@addCookie')->name('addCookie');
             Route::post('/tiktok/ip/renew', 'TiktokController@renewIp')->name('renewIp');
@@ -164,6 +164,9 @@ Route::group(['middleware' => 'localization', 'prefix' => Session::get('locale')
             Route::get('/vatStats', 'InvoiceVatController@stats')->name('stats');
             Route::get('/vatInvoice', 'InvoiceVatController@index')->name('invoiceVat');
             Route::put('/vatInvoice', 'InvoiceVatController@update')->name('updateInvoiceVat');
+            Route::get('/invoice/vat/download/{invoiceId}', 'InvoiceController@downloadVATInvoice')->name('invoice.vat.download');
+            Route::get('/invoice/vat/preview/{invoiceId}', 'InvoiceController@previewVATInvoice')->name('invoice.vat.preview');
+            
         });
     });
     Route::get('user/check', 'UserController@userCheck')->name('userCheck');
@@ -206,27 +209,27 @@ Route::group(['middleware' => 'localization', 'prefix' => Session::get('locale')
         echo $i;
     });
     Route::get('/reset', function (Request $request) {
-        $jobs = DB::select("select id from tiktok_profile where del_status = 0 and id not in (select tiktok_profile_id  from  zliveautolive  where status =2 and platform  =2 ) ");
-//        Log::info(count($jobs));
-        $i = 0;
-        foreach ($jobs as $live) {
-
-            $profile = TiktokProfile::where("id", $live->id)->first();
-            $profile->install_id = Utils::randomDigit(19);
-            $profile->device_id = Utils::randomDigit(19);
-            $profile->last_reset_device = time();
-            $profile->save();
-            Log::info(getmypid() . " reset device " . $profile->id);
-        }
-        echo $i;
+//        $jobs = DB::select("select id from tiktok_profile where del_status = 0 and id not in (select tiktok_profile_id  from  zliveautolive  where status =2 and platform  =2 ) ");
+////        Log::info(count($jobs));
+//        $i = 0;
+//        foreach ($jobs as $live) {
+//
+//            $profile = TiktokProfile::where("id", $live->id)->first();
+//            $profile->install_id = Utils::randomDigit(19);
+//            $profile->device_id = Utils::randomDigit(19);
+//            $profile->last_reset_device = time();
+//            $profile->save();
+//            Log::info(getmypid() . " reset device " . $profile->id);
+//        }
+//        echo $i;
     });
     Route::get('/test', function (Request $request) {
-        return App\Common\Youtube\YoutubeHelper::getVideoInfoHtmlDesktop("jBpc8KyGkb4",1);
+        return App\Common\Youtube\YoutubeHelper::getVideoInfoHtmlDesktop("jBpc8KyGkb4", 1);
     });
-    
+
     Route::post('api/service/2/desktop/device_register', 'DeviceController@registerDevice')->name('registerDevice');
     Route::get('api/device/load/{id}', 'DeviceController@loadDevice')->name('loadDevice');
-    
+
     Route::post('api/channel_fake/add', 'ApiController@addFakingChannel')->name('addFakingChannel');
     Route::get('api/channel_fake/gets', 'ApiController@getFakingChannel')->name('getFakingChannel');
     Route::get('api/channel_fake/get', 'ApiController@getFakedChannel')->name('getFakedChannel');
@@ -237,15 +240,15 @@ Route::group(['middleware' => 'localization', 'prefix' => Session::get('locale')
     });
     Route::post('/api/callback/acb/transaction', 'ApiController@callbackAcbTransaction')->name('callbackAcbTransaction');
     Route::post('/api/callback/acb/query', 'ApiController@callbackAcbQuery')->name('callbackAcbQuery');
-    
+
     Route::get('/scanSalarm', 'ApiController@scanStartAlarmRecords');
     Route::get('/scanEalarm', 'ApiController@scanEndAlarmRecords');
     // Routes cho chức năng tự động thêm sản phẩm vào luồng live
     Route::get('/autoUpdateLiveStartedTime', 'ApiController@updateLiveStartedTime')->name('updateLiveStartedTime');
     Route::get('/autoAddProductsToLive', 'ApiController@autoAddProductsToLive')->name('autoAddProductsToLive');
     // Route cho cron job tự động pin sản phẩm
-    Route::get('/autoProductPinning', 'ApiController@autoProductPinning')->name('autoProductPinning');   
-    
+    Route::get('/autoProductPinning', 'ApiController@autoProductPinning')->name('autoProductPinning');
+    Route::get('/invoice/vat/sync', 'InvoiceController@syncMinvoiceData')->name('invoice.vat.sync');
 });
 
 

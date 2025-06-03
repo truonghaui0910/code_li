@@ -74,10 +74,11 @@
                                             <i class="mdi mdi-account-star-variant"></i> <span>Profile</span>
                                         </a>-->
                     <!-- item-->
-                    
+                    @if($isTiktokMulti)
                     <a onclick="showProductSetModal(1)" class="dropdown-item notify-item cur-point">
                         <i class="fas fa-layer-group"></i> <span>Product</span>
                     </a>
+                    @endif
                     <a href="logout" class="dropdown-item notify-item">
                         <i class="mdi mdi-logout"></i> <span>Logout</span>
                     </a>

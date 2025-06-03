@@ -36,7 +36,19 @@
     .profile-stats {
         color: #aaa;
         font-size: 0.9rem;
-    }        
+    }
+    .preview-vat-btn, .download-vat-btn {
+        margin: 2px;
+        min-width: 35px;
+    }
+
+    .preview-vat-btn:hover {
+        background-color: #31b0d5;
+    }
+
+    .download-vat-btn:hover {
+        background-color: #449d44;
+    }    
 </style>
 <div class="row fadeInDown animated">
     <div class="col-lg-6">
@@ -81,35 +93,6 @@
         </div>
     </div>
     <div class="col-lg-6">
-<!--            <div class="col-lg-12">
-        <div class="card-box">
-            <h4 class="header-title m-t-0"><i class="fa fa-filter"></i> {{ trans('label.filterSearch') }}</h4>
-            <div class="col-md-12 col-sm-6 col-xs-12">
-
-                <form id="formFilter" class="form-label-left" action="/vatInvoice" method="GET">
-                    
-                    <div class="row">
-
-                        <div class="col-md-12">
-                            <div class="form-group row">
-                                <label class="col-12 col-form-label">Trạng thái</label>
-                                <div class="col-12">
-                                    <select id="monthSelect" name="monthSelect" class="form-control" size="background: transparent;
-                                                                                                            position: absolute;
-                                                                                                            right: 10px;
-                                                                                                            top: 0px;
-                                                                                                            z-index: 100;">
-
-                                    </select>
-                                </div>
-                            </div>
-                        </div>
-
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>-->
         <div class="row">
             <div class="col-lg-4">
                 <div class="card-box">
@@ -171,7 +154,11 @@
                         </h4>
 
                     </div>
-
+                    <div class="col-md-6 text-right">
+                        <button id="syncVatBtn" class="btn btn-warning btn-sm">
+                            <i class="fa fa-refresh"></i> Đồng bộ mã VAT
+                        </button>
+                    </div>
                 </div>
 
                 <div class="table-responsive">
@@ -187,7 +174,7 @@
                                 <th class="text-center">Live</th>
                                 <th class="text-center">Month</th>
                                 <th class="text-center w-20">Vat Code</th>
-                                <!--<th class="text-right w-20">Chức năng</th>-->
+                                <th class="text-right w-10">Chức năng</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -215,30 +202,26 @@
                                                 data-id="{{ $data->id }}">Save</button>
                                     </div>
                                 </td>
-<!--                                        <td class="text-right">
-
-
-                                    @if ($data->status_cookie == 1)
-                                        <button id="check-v3-{{ $data->id }}"
-                                            class="btn btn-dark btn-sm check-cookie" data-id="{{ $data->id }}"
-                                            data-toggle="tooltip"
-                                            data-placement="top" data-html='true'
-                                            title="Kiểm tra trạng thái V3">Check V3</button>
-                                        <button id="fake-v3-{{ $data->id }}"
-                                            class="btn btn-dark btn-sm waves-effect waves-light"
-                                            onclick="fakeChannel({{ $data->id }})" data-toggle="tooltip"
-                                            data-placement="top" data-html='true' title="Lấy thông tin ảnh fake">Fake</button>
-                                        <button id="kicked-v3-{{ $data->id }}"
-                                            class="btn btn-dark btn-sm waves-effect waves-light"
-                                            onclick="kicked({{ $data->id }})" data-toggle="tooltip"
-                                            data-placement="top" data-html='true' title="Đánh dấu đã kick">Kicked</button>
-                                        <button 
-                                            class="btn btn-dark btn-sm waves-effect waves-light"
-                                            onclick="modalErrorV3({{ $data->id }})" data-toggle="tooltip"
-                                            data-placement="top" data-html='true' title="Thông báo lỗi">Error</button>
+                                <td class="text-right">
+                                    @if($data->vat_id)
+                                        <button class="btn btn-info btn-sm preview-vat-btn" 
+                                                data-id="{{ $data->id }}" 
+                                                data-toggle="tooltip" 
+                                                data-placement="top" 
+                                                title="Xem hóa đơn VAT">
+                                            <i class="fa fa-eye"></i>
+                                        </button>
+                                        <button class="btn btn-success btn-sm download-vat-btn" 
+                                                data-id="{{ $data->id }}" 
+                                                data-toggle="tooltip" 
+                                                data-placement="top" 
+                                                title="Tải hóa đơn VAT">
+                                            <i class="fa fa-download"></i>
+                                        </button>
+                                    @else
+                                        <span class="text-muted"></span>
                                     @endif
-
-                                </td>-->
+                                </td>
                             </tr>
                             @endforeach
                         </tbody>
@@ -388,5 +371,80 @@
         }
     });
 
+    // Xử lý nút Preview VAT
+    $(document).on('click', '.preview-vat-btn', function() {
+        let invoiceId = $(this).data('id');
+        let url = `/invoice/vat/preview/${invoiceId}`;
+
+        // Mở trong tab mới
+        window.open(url, '_blank');
+    });
+
+    // Xử lý nút Download VAT
+    $(document).on('click', '.download-vat-btn', function() {
+        let button = $(this);
+        let invoiceId = button.data('id');
+        let originalHtml = button.html();
+
+        // Hiệu ứng loading
+        button.html('<i class="fa fa-spinner fa-spin"></i>');
+        button.prop('disabled', true);
+
+        // Tạo link download
+        let url = `/invoice/vat/download/${invoiceId}`;
+
+        // Tạo element a ẩn để download
+        let link = document.createElement('a');
+        link.href = url;
+        link.download = `hoadon_vat_${invoiceId}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        // Reset button sau 2 giây
+        setTimeout(function() {
+            button.html(originalHtml);
+            button.prop('disabled', false);
+        }, 2000);
+    });
+    
+$(document).on('click', '#syncVatBtn', function() {
+    let button = $(this);
+    let originalHtml = button.html();
+    
+    // Hiệu ứng loading
+    button.html('<i class="fa fa-spinner fa-spin"></i> Đang đồng bộ...');
+    button.prop('disabled', true);
+    
+    // Gọi API sync
+    $.ajax({
+        url: '/invoice/vat/sync',
+        method: 'GET',
+        success: function(response) {
+            button.html(originalHtml);
+            button.prop('disabled', false);
+            
+            if (response.status === 'success') {
+                $.Notification.autoHideNotify('success', 'top center', 'Thành công', response.message);
+                // Reload trang để cập nhật dữ liệu mới
+                setTimeout(function() {
+                    location.reload();
+                }, 1500);
+            } else {
+                $.Notification.autoHideNotify('error', 'top center', 'Lỗi', response.message);
+            }
+        },
+        error: function(xhr) {
+            button.html(originalHtml);
+            button.prop('disabled', false);
+            
+            let errorMsg = 'Đã xảy ra lỗi';
+            if (xhr.responseJSON && xhr.responseJSON.error) {
+                errorMsg = xhr.responseJSON.error;
+            }
+            $.Notification.autoHideNotify('error', 'top center', 'Lỗi', errorMsg);
+        }
+    });
+});    
 </script>
 @endsection

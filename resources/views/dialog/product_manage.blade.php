@@ -84,9 +84,8 @@
 </div>
 
 <!-- Modal cấu hình thời gian pin sản phẩm -->
-<!-- Modal cấu hình thời gian pin sản phẩm -->
 <div class="modal fade" id="dialog_pin_config" tabindex="-1" role="dialog" aria-labelledby="pinConfigModalLabel">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-xl">
         <div class="modal-content">
             <div class="card-box m-b-0 pa-15">
                 <div class="modal-header pa-5">
@@ -166,8 +165,9 @@
                                                         <tr>
                                                             <th width="5%">#</th>
                                                             <th width="15%">Hình ảnh</th>
-                                                            <th width="50%">Sản phẩm</th>
-                                                            <th width="30%">Thời gian pin (phút)</th>
+                                                            <th width="30%">Sản phẩm</th>
+                                                            <th width="20%">Thời gian pin (phút)</th>
+                                                            <th width="30%">Flash sale</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody id="pin_time_items">
