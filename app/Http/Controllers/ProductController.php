@@ -560,161 +560,170 @@ class ProductController extends Controller {
 //}    
 
 
-    public function savePinConfig(Request $request) {
-        $user = Auth::user();
-        Log::info("$user->user_name|ProductController.savePinConfig|request=" . json_encode($request->all()));
+public function savePinConfig(Request $request) {
+    $user = Auth::user();
 
-        // Lấy thông tin profile
-        $profileId = $request->profile_id;
+    // Lấy thông tin profile
+    $profileId = $request->profile_id;
+    $configJson = $request->config;
 
-        if (!$profileId) {
-            return array("status" => "error", "message" => "Thiếu thông tin profile ID");
+    if (!$profileId || !$configJson) {
+        return response()->json([
+            "status" => "error", 
+            "message" => "Thiếu thông tin profile ID hoặc cấu hình"
+        ]);
+    }
+
+    try {
+        $config = json_decode($configJson, true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            return response()->json([
+                "status" => "error", 
+                "message" => "Cấu hình không hợp lệ"
+            ]);
         }
+
+        // Debug log để kiểm tra dữ liệu nhận được
+        Log::info("savePinConfig received config: " . $configJson);
 
         $profile = TiktokProfile::where('id', $profileId)
                 ->where('username', $user->user_name)
                 ->first();
 
         if (!$profile) {
-            return array("status" => "error", "message" => "Không tìm thấy thông tin profile TikTok");
+            return response()->json([
+                "status" => "error", 
+                "message" => "Không tìm thấy thông tin profile TikTok"
+            ]);
         }
 
-        // Lấy cấu hình pin từ request
-        $productSetId = $request->product_set_id;
-        $isAutoPin = $request->is_autopin ? true : false;
-
-        if (!$productSetId) {
-            return array("status" => "error", "message" => "Thiếu thông tin bộ sản phẩm");
-        }
-
-        // Tạo cấu hình pin
-        $pinConfig = [
-            'product_set_id' => $productSetId,
-            'is_autopin' => $isAutoPin,
-            'updated_at' => time()
-        ];
-
-        // Nếu bật tự động pin, lưu thêm thông tin cấu hình
-        if ($isAutoPin) {
-            $pinType = $request->pin_type; // 'interval' hoặc 'specific'
-            $pinConfig['pin_type'] = $pinType;
-
-            if ($pinType == 'interval') {
-                // Kiểu 1: Khoảng thời gian
-                $interval = intval($request->interval);
-
-                if ($interval < 60) {  // Tối thiểu 1 phút = 60 giây
-                    return array("status" => "error", "message" => "Khoảng thời gian pin phải lớn hơn hoặc bằng 1 phút");
-                }
-
-                $pinConfig['interval'] = $interval;
-            } else {
-                // Kiểu 2: Thời điểm cụ thể
-                $products = json_decode($request->products, true);
-
-                if (empty($products)) {
-                    return array("status" => "error", "message" => "Thiếu thông tin thời gian pin cho sản phẩm");
-                }
-
-                // Validate và xử lý flash sale cho từng sản phẩm
-                foreach ($products as &$product) {
-                    if (isset($product['flash_sale'])) {
-                        $flashSale = $product['flash_sale'];
-
-                        // Validate giá flash sale
-                        if (isset($flashSale['price'])) {
-                            $salePrice = floatval($flashSale['price']);
-//                            $originalPrice = floatval($product['original_price']);
-
-//                            if ($salePrice >= $originalPrice) {
-//                                return array(
-//                                    "status" => "error",
-//                                    "message" => "Giá Flash Sale phải thấp hơn giá gốc của sản phẩm"
-//                                );
-//                            }
-                        }
-
-                        // Validate thời gian flash sale
-                        if (isset($flashSale['duration'])) {
-                            $duration = intval($flashSale['duration']);
-
-                            if ($duration < 1) {
-                                return array(
-                                    "status" => "error",
-                                    "message" => "Thời gian Flash Sale phải từ 1 phút trở lên"
-                                );
-                            }
-                        }
-
-                        // Thêm thông tin timestamp và trạng thái
-                        $product['flash_sale'] = array_merge($flashSale, [
-                            'created_at' => time(),
-                            'status' => 'pending'
-                        ]);
-                    }
-                }
-
-                // Sắp xếp sản phẩm theo thời gian pin
-                usort($products, function($a, $b) {
-                    return $a['pin_time'] - $b['pin_time'];
-                });
-
-                $pinConfig['products'] = $products;
-            }
-        }
-
-        // Log thông tin cấu hình trước khi lưu
-        Log::info("$user->user_name|savePinConfig|pinConfig=" . json_encode($pinConfig));
-
-        // Lưu cấu hình vào profile
-        $profile->product_pin_config = json_encode($pinConfig);
+        // Lưu cấu hình pin
+        $profile->product_pin_config = $configJson;
         $profile->save();
 
-        return array("status" => "success", "message" => "Đã lưu cấu hình pin sản phẩm thành công");
+        Log::info("Pin config saved for profile $profileId: " . $configJson);
+
+        return response()->json([
+            "status" => "success", 
+            "message" => "Lưu cấu hình pin sản phẩm thành công"
+        ]);
+
+    } catch (Exception $e) {
+        Log::error("Error saving pin config: " . $e->getMessage());
+        return response()->json([
+            "status" => "error", 
+            "message" => "Có lỗi xảy ra khi lưu cấu hình: " . $e->getMessage()
+        ]);
+    }
+}
+
+
+public function getPinConfig(Request $request) {
+    $user = Auth::user();
+
+    // Lấy thông tin profile
+    $profileId = $request->profile_id;
+
+    if (!$profileId) {
+        return response()->json([
+            "status" => "error", 
+            "message" => "Thiếu thông tin profile ID"
+        ]);
     }
 
-    /**
-     * Lấy cấu hình pin sản phẩm
-     */
-    public function getPinConfig(Request $request) {
-        $user = Auth::user();
+    $profile = TiktokProfile::where('id', $profileId)
+            ->where('username', $user->user_name)
+            ->first();
 
-        // Lấy thông tin profile
-        $profileId = $request->profile_id;
+    if (!$profile) {
+        return response()->json([
+            "status" => "error", 
+            "message" => "Không tìm thấy thông tin profile TikTok"
+        ]);
+    }
 
-        if (!$profileId) {
-            return array("status" => "error", "message" => "Thiếu thông tin profile ID");
+    // Lấy cấu hình pin
+    $pinConfig = null;
+    if (!empty($profile->product_pin_config)) {
+        try {
+            $pinConfig = json_decode($profile->product_pin_config, true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                Log::warning("Invalid JSON in product_pin_config for profile $profileId");
+                $pinConfig = null;
+            }
+        } catch (Exception $e) {
+            Log::error("Error parsing pin config: " . $e->getMessage());
+            $pinConfig = null;
         }
+    }
 
-        $profile = TiktokProfile::where('id', $profileId)
-                ->where('username', $user->user_name)
-                ->first();
+    // Debug log để kiểm tra dữ liệu trả về
+    Log::info("getPinConfig for profile $profileId returning: " . json_encode($pinConfig));
 
-        if (!$profile) {
-            return array("status" => "error", "message" => "Không tìm thấy thông tin profile TikTok");
-        }
-
-        // Lấy cấu hình pin
-        $pinConfig = isset($profile->product_pin_config) ? json_decode($profile->product_pin_config, true) : null;
-
-        if (!$pinConfig) {
-            return array("status" => "success", "pin_config" => null);
-        }
-
-        // Nếu cấu hình có product_set_id, lấy thông tin bộ sản phẩm từ user
-        if (isset($pinConfig['product_set_id'])) {
-            $productSets = isset($user->product_sets) ? json_decode($user->product_sets, true) : [];
-
-            foreach ($productSets as $set) {
-                if ($set['id'] == $pinConfig['product_set_id']) {
-                    $pinConfig['product_set'] = $set;
-                    break;
-                }
+    // Nếu cấu hình có product_set_id, lấy thông tin bộ sản phẩm từ user
+    if ($pinConfig && isset($pinConfig['product_set_id'])) {
+        $productSets = [];
+        if (!empty($user->product_sets)) {
+            try {
+                $productSets = json_decode($user->product_sets, true) ?: [];
+            } catch (Exception $e) {
+                Log::error("Error parsing user product_sets: " . $e->getMessage());
             }
         }
 
-        return array("status" => "success", "pin_config" => $pinConfig);
+        foreach ($productSets as $set) {
+            if (isset($set['id']) && $set['id'] == $pinConfig['product_set_id']) {
+                $pinConfig['product_set'] = $set;
+                break;
+            }
+        }
     }
+
+    return response()->json([
+        "status" => "success", 
+        "pin_config" => $pinConfig
+    ]);
+} 
+    
+//    public function getPinConfig(Request $request) {
+//        $user = Auth::user();
+//
+//        // Lấy thông tin profile
+//        $profileId = $request->profile_id;
+//
+//        if (!$profileId) {
+//            return array("status" => "error", "message" => "Thiếu thông tin profile ID");
+//        }
+//
+//        $profile = TiktokProfile::where('id', $profileId)
+//                ->where('username', $user->user_name)
+//                ->first();
+//
+//        if (!$profile) {
+//            return array("status" => "error", "message" => "Không tìm thấy thông tin profile TikTok");
+//        }
+//
+//        // Lấy cấu hình pin
+//        $pinConfig = isset($profile->product_pin_config) ? json_decode($profile->product_pin_config, true) : null;
+//
+//        if (!$pinConfig) {
+//            return array("status" => "success", "pin_config" => null);
+//        }
+//
+//        // Nếu cấu hình có product_set_id, lấy thông tin bộ sản phẩm từ user
+//        if (isset($pinConfig['product_set_id'])) {
+//            $productSets = isset($user->product_sets) ? json_decode($user->product_sets, true) : [];
+//
+//            foreach ($productSets as $set) {
+//                if ($set['id'] == $pinConfig['product_set_id']) {
+//                    $pinConfig['product_set'] = $set;
+//                    break;
+//                }
+//            }
+//        }
+//
+//        return array("status" => "success", "pin_config" => $pinConfig);
+//    }
 
     /**
      * Xóa cấu hình pin sản phẩm

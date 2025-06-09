@@ -831,7 +831,7 @@ class ApiController extends Controller {
                 ->get();
 
         $processedCount = 0;
-//        Log::info(__FUNCTION__ . ": Tìm thấy " . count($lives) . " luồng live cần kiểm tra pin sản phẩm ". "pid=" . getmypid());
+        Log::info(__FUNCTION__ . ": Tìm thấy " . count($lives) . " luồng live cần kiểm tra pin sản phẩm " . "pid=" . getmypid());
 
         foreach ($lives as $live) {
             try {
@@ -884,7 +884,9 @@ class ApiController extends Controller {
                 if ($pinConfig->pin_type === 'interval') {
                     $this->processIntervalPinning($live, $profile, $pinConfig, $selectedSet);
                 } else if ($pinConfig->pin_type === 'specific') {
+
                     $this->processSpecificPinning($live, $profile, $pinConfig, $selectedSet);
+                    $this->processFlashSaleFromConfig($live, $profile, $pinConfig, $selectedSet);
                 }
 
                 $processedCount++;
@@ -1043,6 +1045,157 @@ class ApiController extends Controller {
             $errorMsg = isset($response->message) ? $response->message : $shell;
             Log::error("pinProduct: Lỗi khi pin sản phẩm #{$productId}: " . $errorMsg);
             return false;
+        }
+    }
+
+    /**
+     * Xử lý flash sale từ cấu hình JSON
+     */
+    private function processFlashSaleFromConfig($live, $profile, $pinConfig, $selectedSet) {
+        $currentTime = time();
+
+        try {
+            // Kiểm tra có products với flash_sale không
+            if (!isset($selectedSet->products) || empty($selectedSet->products)) {
+                return;
+            }
+
+            foreach ($selectedSet->products as $product) {
+                // Kiểm tra sản phẩm có cấu hình flash_sale không
+                if (!isset($product->flash_sale) || empty($product->flash_sale)) {
+                    continue;
+                }
+
+                $flashSale = $product->flash_sale;
+
+                // Kiểm tra các trường bắt buộc
+                if (!isset($flashSale->price) || !isset($flashSale->duration) ||
+                        !isset($flashSale->created_at)) {
+                    Log::warning("Flash sale config không đầy đủ cho product {$product->product_id}");
+                    continue;
+                }
+
+                // Kiểm tra điều kiện next_time_run
+                if (isset($flashSale->next_time_run) && $currentTime < $flashSale->next_time_run) {
+                    // Chưa đến thời gian chạy tiếp theo
+                    continue;
+                }
+
+                // Kiểm tra thời gian - chỉ chạy flash sale trong vòng 30 phút sau created_at
+                $timeSinceCreated = $currentTime - $flashSale->created_at;
+                if ($timeSinceCreated > 1800) { // 30 phút = 1800 giây
+                    Log::info("Flash sale cho product {$product->product_id} đã hết hạn (quá 30 phút)");
+                    continue;
+                }
+
+                Log::info("Bắt đầu tạo flash sale cho product {$product->product_id} với giá {$flashSale->price}");
+
+                // Thực thi lệnh Python để tạo flash sale
+                $pythonPath = '/home/tiktok_tools/env/bin/python';
+                $scriptPath = '/home/v21.autolive.vip/public_html/python.py';
+
+                $command = sprintf(
+                        '%s %s flash_sale %s %s %s %s 2>&1', escapeshellarg($pythonPath), escapeshellarg($scriptPath), escapeshellarg($profile->id), escapeshellarg($product->product_id), escapeshellarg($flashSale->price), escapeshellarg($flashSale->duration)
+                );
+
+                Log::info("Executing flash sale command: " . $command);
+
+                $output = shell_exec($command);
+                $result = null;
+                $isSuccess = false;
+
+                if ($output !== null) {
+                    // Parse JSON output
+                    $result = json_decode(trim($output), true);
+
+                    if (json_last_error() === JSON_ERROR_NONE) {
+                        // Kiểm tra xem flash sale có thành công không
+                        if ($result && is_array($result)) {
+                            // Kiểm tra theo format TikTok API response
+                            if (isset($result['code']) && $result['code'] === 0 &&
+                                    isset($result['msg']) && $result['msg'] === 'success') {
+
+                                // Kiểm tra có promotion_id không (success case)
+                                if (isset($result['data']['promotion_id']) &&
+                                        !empty($result['data']['promotion_id']) &&
+                                        $result['data']['promotion_id'] !== '0') {
+                                    $isSuccess = true;
+                                    Log::info("Flash sale thành công với promotion_id: " . $result['data']['promotion_id']);
+                                }
+                                // Kiểm tra có failed_products không (fail case)
+                                else if (isset($result['data']['failed_products']) &&
+                                        !empty($result['data']['failed_products'])) {
+                                    $isSuccess = false;
+                                    $failedProduct = $result['data']['failed_products'][0];
+                                    Log::warning("Flash sale thất bại cho product {$product->product_id}: " .
+                                            $failedProduct['failed_msg'] . " (reason: " . $failedProduct['failed_reason'] . ")");
+                                }
+                                // Trường hợp khác với code=0 nhưng không rõ kết quả
+                                else {
+                                    $isSuccess = false;
+                                    Log::warning("Flash sale response không rõ ràng: " . json_encode($result));
+                                }
+                            }
+                            // API trả về code khác 0 (lỗi)
+                            else {
+                                $isSuccess = false;
+                                $errorMsg = isset($result['msg']) ? $result['msg'] : 'Unknown error';
+                                Log::error("Flash sale API error (code: " . ($result['code'] ?? 'unknown') . "): " . $errorMsg);
+                            }
+                        }
+                    } else {
+                        Log::error("Flash sale command returned invalid JSON: " . $output);
+                        $result = ['error' => 'Invalid JSON response', 'raw_output' => $output];
+                    }
+                } else {
+                    Log::error("Flash sale command failed to execute");
+                    $result = ['error' => 'Command execution failed'];
+                }
+
+                // Cập nhật next_time_run cho flash sale
+                try {
+                    // Tìm product set tương ứng để cập nhật
+                    $user = User::where('user_name', $profile->username)->first();
+                    if ($user && $user->product_sets) {
+                        $productSets = json_decode($user->product_sets, true);
+                        $updated = false;
+
+                        foreach ($productSets as &$set) {
+                            if ($set['id'] == $pinConfig->product_set_id) {
+                                foreach ($set['products'] as &$prod) {
+                                    if ($prod['product_id'] == $product->product_id && isset($prod['flash_sale'])) {
+                                        if ($isSuccess) {
+                                            // Set next_time_run = hiện tại + 8 phút (480 giây)
+                                            $nextRunTime = $currentTime + 480;
+                                            $prod['flash_sale']['last_executed_at'] = $currentTime;
+                                            Log::info("Flash sale được tạo thành công cho product {$product->product_id}. Next run: " . date('Y-m-d H:i:s', $nextRunTime));
+                                        } else {
+                                            // Vẫn set next_time_run để tránh spam lỗi (retry sau 2 phút)
+                                            $nextRunTime = $currentTime + 120;
+                                            Log::error("Không thể tạo flash sale cho product {$product->product_id}. Retry: " . date('Y-m-d H:i:s', $nextRunTime) . ". Result: " . json_encode($result));
+                                        }
+
+                                        $prod['flash_sale']['next_time_run'] = $nextRunTime;
+                                        $prod['flash_sale']['updated_at'] = $currentTime;
+                                        $updated = true;
+                                        break 2;
+                                    }
+                                }
+                            }
+                        }
+
+                        if ($updated) {
+                            $user->product_sets = json_encode($productSets);
+                            $user->save();
+                            Log::info("Đã cập nhật next_time_run = " . date('Y-m-d H:i:s', $nextRunTime) . " cho product {$product->product_id}");
+                        }
+                    }
+                } catch (\Exception $e) {
+                    Log::error("Lỗi khi cập nhật flash sale next_time_run: " . $e->getMessage());
+                }
+            }
+        } catch (\Exception $e) {
+            Log::error("Lỗi khi xử lý flash sale: " . $e->getMessage());
         }
     }
 
